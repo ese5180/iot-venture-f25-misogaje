@@ -75,7 +75,7 @@ The Boring Company (TBC) & other full size TBM constructors
 
 ### System-Level Diagrams
 
-
+![alt text](image.png)
 
 ### Security Requirements Specification
 
