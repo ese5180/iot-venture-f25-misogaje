@@ -29,5 +29,14 @@
 
 ### Hardware Requirements Specification
 
+HR-01: TBM-mounted magnet (N52, ≥50×20 mm) shall generate ≥1 μT signal at 1.5 m depth.
+
+HR-02: Surface nodes shall include Nordic nRF7002 with SAMD21Pro RF / Other Lora shield, MMC5983MA magnetometer, LoRa antenna, and IP65 housing.
+
+HR-03: Gateway shall be an nRF7002 DK with Wi-Fi capability for MQTT uplink.
+
+HR-04: System shall support ≥10 nodes with 0.1 Hz updates.
+
+
 ### Software Requirements Specification
 
