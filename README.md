@@ -71,7 +71,17 @@ The Boring Company (TBC) & other full size TBM constructors
 
 #### Call with Cole Kenny, GNC engineer at TBC, host of NABC:
 
+Liked that we are trying to avoid electronics inside the TBM and push everything to the surface (eliminating failure points), also a novel method no one did before.
 
+Thought the idea is testable without a tunnel, and that doing wireless removes hassle of laying cables etc.
+
+Points to note:
+
+Whether the magnetic field would be strong enough at 5 ft depth, especially with the steel shell.
+
+Urban magnetic clutter (rebar, vehicles, power lines) and whether we can filter that out.
+
+Surface logistics (laying out and leapfrogging nodes during a dig).
 
 ### System-Level Diagrams
 
