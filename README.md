@@ -17,17 +17,4 @@
 
 ## Concept Development
 
-### Product Function
-
-### Target Market & Demographics
-
-### Stakeholders
-
-### System-Level Diagrams
-
-### Security Requirements Specification
-
-### Hardware Requirements Specification
-
-### Software Requirements Specification
 
