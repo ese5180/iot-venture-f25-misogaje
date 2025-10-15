@@ -1,3 +1,4 @@
+
 &arduino_spi {
     status = "okay";
     cs-gpios = <&arduino_header 16 GPIO_ACTIVE_LOW>; /* D10 */
