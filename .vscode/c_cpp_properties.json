@@ -1,0 +1,10 @@
+{
+    "configurations": [
+        {
+            "name": "nRF Connect",
+            "compileCommands": "${workspaceFolder}/misogate/build/misogate/compile_commands.json",
+            "intelliSenseMode": "gcc-arm"
+        }
+    ],
+    "version": 4
+}
