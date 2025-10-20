@@ -1,4 +1,4 @@
-// misonode_rfm69_rx.c  — matches your TX style (no overlay required)
+// misonode_rfm69_rx.c — nRF7002 DK + RFM69HCW (RX) — same style as your TX (no overlay)
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/spi.h>
@@ -6,7 +6,7 @@
 #include <zephyr/logging/log.h>
 #include <string.h>
 
-LOG_MODULE_REGISTER(misonode_rx, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(misonode, LOG_LEVEL_INF);
 
 /* ---------- RFM69 registers (subset) ---------- */
 #define R_REG_FIFO              0x00
@@ -53,9 +53,9 @@ LOG_MODULE_REGISTER(misonode_rx, LOG_LEVEL_INF);
 #define IRQ2_FIFOOVERRUN        BIT(4)
 
 /* ---------- Board wiring (nRF7002 DK) ----------
- * SPI bus: Arduino header SPI => DT node arduino_spi
- * CS:     D10 = P1.12  (ACTIVE LOW)
- * RESET:  D9  = P1.10  (ACTIVE HIGH)
+ * SPI:   Arduino header SPI node
+ * CS:    D10 = P1.12 (active low)
+ * RESET: D9  = P1.10 (ACTIVE HIGH)
  */
 static const struct device *spi_dev = DEVICE_DT_GET(DT_NODELABEL(arduino_spi));
 
@@ -72,7 +72,7 @@ static const struct gpio_dt_spec reset_gpio = {
 
 static struct spi_config spi_cfg = {
     .frequency = 1000000,
-    .operation = SPI_OP_MODE_MASTER | SPI_WORD_SET(8) | SPI_TRANSFER_MSB, /* mode 0 */
+    .operation = SPI_OP_MODE_MASTER | SPI_WORD_SET(8) | SPI_TRANSFER_MSB, // mode 0
     .slave = 0,
     .cs = { .gpio = cs_gpio, .delay = 0 },
 };
@@ -87,10 +87,7 @@ static uint8_t rfm69_read_reg(uint8_t reg)
     const struct spi_buf_set tx_set = { .buffers = &tx, .count = 1 };
     const struct spi_buf_set rx_set = { .buffers = &rx, .count = 1 };
     int ret = spi_transceive(spi_dev, &spi_cfg, &tx_set, &rx_set);
-    if (ret < 0) {
-        LOG_ERR("SPI transceive failed: %d", ret);
-        return 0xFF;
-    }
+    if (ret < 0) { LOG_ERR("SPI transceive failed: %d", ret); return 0xFF; }
     return rx_buf[1];
 }
 
@@ -108,33 +105,14 @@ static int rfm69_read_burst(uint8_t reg, uint8_t *buf, size_t len)
 {
     if (!buf || !len) return -EINVAL;
     uint8_t addr = (uint8_t)(reg & 0x7F);
-    struct spi_buf txb[2] = {
-        { .buf = &addr, .len = 1 },
-        { .buf = NULL,  .len = len },
-    };
-    struct spi_buf rxb[2] = {
-        { .buf = NULL,  .len = 1 },
-        { .buf = buf,   .len = len },
-    };
+    struct spi_buf txb[2] = { { .buf = &addr, .len = 1 }, { .buf = NULL, .len = len } };
+    struct spi_buf rxb[2] = { { .buf = NULL, .len = 1 }, { .buf = buf,  .len = len } };
     const struct spi_buf_set tx_set = { .buffers = txb, .count = 2 };
     const struct spi_buf_set rx_set = { .buffers = rxb, .count = 2 };
     return spi_transceive(spi_dev, &spi_cfg, &tx_set, &rx_set);
 }
 
 /* ---------- Mode control & reset ---------- */
-static int rfm69_write_opmode_and_check(uint8_t mode_bits)
-{
-    uint8_t v = OPMODE_SEQUENCER_ON | OPMODE_LISTEN_OFF | (mode_bits & 0x1C);
-    for (int i = 0; i < 3; ++i) {
-        int rc = rfm69_write_reg(R_REG_OPMODE, v);
-        if (rc < 0) return rc;
-        k_busy_wait(100);
-        uint8_t op = rfm69_read_reg(R_REG_OPMODE);
-        if ((op & 0x9C) == (v & 0x9C)) return 0;
-    }
-    return -EIO;
-}
-
 static int rfm69_wait_modeready(int32_t timeout_us)
 {
     while (timeout_us > 0) {
@@ -145,19 +123,20 @@ static int rfm69_wait_modeready(int32_t timeout_us)
     return -ETIMEDOUT;
 }
 
-/* IMPORTANT: ModeReady never asserts in SLEEP */
+static void rfm69_write_opmode(uint8_t mode_bits)
+{
+    uint8_t v = OPMODE_SEQUENCER_ON | OPMODE_LISTEN_OFF | (mode_bits & 0x1C);
+    rfm69_write_reg(R_REG_OPMODE, v);
+}
+
 static int rfm69_set_mode_blocking(uint8_t mode_bits)
 {
-    int rc = rfm69_write_opmode_and_check(mode_bits);
-    if (rc < 0) return rc;
-    if (mode_bits == OPMODE_MODE_SLEEP) {
-        k_msleep(2);
-        return 0;
-    }
+    rfm69_write_opmode(mode_bits);
+    if (mode_bits == OPMODE_MODE_SLEEP) { k_msleep(2); return 0; }
     return rfm69_wait_modeready(60000);
 }
 
-/* ACTIVE-HIGH reset pulse (>100 us), then wait */
+/* ACTIVE-HIGH reset pulse (>100 us) */
 static void rfm69_reset(void)
 {
     gpio_pin_set_dt(&reset_gpio, 1);
@@ -166,10 +145,9 @@ static void rfm69_reset(void)
     k_msleep(15);
 }
 
-/* ---------- Radio config ---------- */
+/* ---------- Radio config (matches your TX) ---------- */
 static int rfm69_init(void)
 {
-    /* Sleep -> Standby */
     if (rfm69_set_mode_blocking(OPMODE_MODE_SLEEP) < 0) return -EIO;
     k_msleep(2);
     if (rfm69_set_mode_blocking(OPMODE_MODE_STDBY) < 0) return -EIO;
@@ -194,7 +172,7 @@ static int rfm69_init(void)
     rfm69_write_reg(R_REG_PALEVEL, 0x80 | 0x00);
     rfm69_write_reg(R_REG_OCP,     0x1A);
 
-    /* Front-end / bandwidth */
+    /* Front-end / bandwidth for ~55 kbps */
     rfm69_write_reg(R_REG_LNA,  0x88);
     rfm69_write_reg(R_REG_RXBW, 0x55);
 
@@ -208,17 +186,17 @@ static int rfm69_init(void)
     /* Packet: variable length + whitening + CRC */
     rfm69_write_reg(R_REG_PACKETCONFIG1, 0xD0);
     rfm69_write_reg(R_REG_PAYLOADLENGTH, 64);
-    rfm69_write_reg(R_REG_FIFOTHRESH,    0x8F);  /* Rx thresh ~15 (not critical) */
+    rfm69_write_reg(R_REG_FIFOTHRESH,    0x8F);  /* Rx thresh ~15 */
     rfm69_write_reg(R_REG_PACKETCONFIG2, 0x02);  /* AES off */
 
-    /* DIO0 mapping (optional): PayloadReady in RX = 00 (we poll anyway) */
+    /* DIO0→PayloadReady (we poll anyway) */
     rfm69_write_reg(R_REG_DIOMAPPING1, 0x00);
 
     if (rfm69_set_mode_blocking(OPMODE_MODE_STDBY) < 0) return -EIO;
     return 0;
 }
 
-/* Blocking receive with timeout; returns 0 on success */
+/* Receive one packet (blocking, timeout ms). Returns 0 on success. */
 static int rfm69_recv(uint8_t *buf, uint8_t *out_len, int timeout_ms, int *out_rssi_dbm)
 {
     if (!buf || !out_len) return -EINVAL;
