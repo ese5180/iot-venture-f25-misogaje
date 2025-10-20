@@ -6,7 +6,7 @@
 #include <zephyr/logging/log.h>
 #include <string.h>
 
-LOG_MODULE_REGISTER(misonode, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(misogate, LOG_LEVEL_INF);
 
 /* ---------- RFM69 registers (subset) ---------- */
 #define R_REG_FIFO              0x00
