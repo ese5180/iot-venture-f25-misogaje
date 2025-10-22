@@ -1,286 +1,439 @@
-#include <zephyr/kernel.h>
-#include <zephyr/device.h>
-#include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/gpio.h>
+
+
 #include <zephyr/logging/log.h>
-#include <zephyr/sys/util.h>
-#include <string.h>
+LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
+
+#include <zephyr/kernel.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/wifi_mgmt.h>
+#include <zephyr/net/net_event.h>
+#include <zephyr/net/mqtt.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/net_ip.h>
 #include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include <zephyr/sys/sys_heap.h>
+#include <zephyr/sys/mem_stats.h>
 
-LOG_MODULE_REGISTER(misonode, LOG_LEVEL_INF);
+#define WIFI_MGMT_EVENTS (NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT)
 
-/* ---------- RFM69 registers (subset) ---------- */
-#define R_REG_FIFO              0x00
-#define R_REG_OPMODE            0x01
-#define R_REG_DATAMODUL         0x02
-#define R_REG_BITRATEMSB        0x03
-#define R_REG_BITRATELSB        0x04
-#define R_REG_FDEVMSB           0x05
-#define R_REG_FDEVLSB           0x06
-#define R_REG_FRFMSB            0x07
-#define R_REG_FRFMID            0x08
-#define R_REG_FRFLSB            0x09
-#define RFM69_REG_VERSION       0x10
-#define R_REG_PALEVEL           0x11
-#define R_REG_OCP               0x13
-#define R_REG_LNA               0x18
-#define R_REG_RXBW              0x19
-#define R_REG_DIOMAPPING1       0x25
-#define R_REG_IRQFLAGS1         0x27
-#define R_REG_IRQFLAGS2         0x28
-#define R_REG_RSSITHRESH        0x29
-#define R_REG_PREAMBLEMSB       0x2C
-#define R_REG_PREAMBLELSB       0x2D
-#define R_REG_SYNCCONFIG        0x2E
-#define R_REG_SYNCVALUE1        0x2F
-#define R_REG_SYNCVALUE2        0x30
-#define R_REG_PACKETCONFIG1     0x37
-#define R_REG_PAYLOADLENGTH     0x38
-#define R_REG_FIFOTHRESH        0x3C
-#define R_REG_PACKETCONFIG2     0x3D
+static struct net_mgmt_event_callback wifi_mgmt_cb;
+static struct net_mgmt_event_callback net_mgmt_cb;
 
-/* OpMode bits */
-#define OPMODE_SEQUENCER_ON     0x80
-#define OPMODE_LISTEN_OFF       0x00
-#define OPMODE_MODE_SLEEP       0x00
-#define OPMODE_MODE_STDBY       0x04
-#define OPMODE_MODE_FS          0x08
-#define OPMODE_MODE_TX          0x0C
-#define OPMODE_MODE_RX          0x10
-
-/* Flags */
-#define IRQ1_MODEREADY          BIT(7)
-#define IRQ2_PAYLOADREADY       BIT(2)
-#define IRQ2_FIFOOVERRUN        BIT(4)
-
-/* ---------- Board wiring (nRF7002 DK) ----------
- * SPI bus: Arduino header SPI => DT node arduino_spi
- * CS:     D10 = P1.12
- * RESET:  D9  = P1.10  (ACTIVE HIGH)
- */
-static const struct device *spi_dev = DEVICE_DT_GET(DT_NODELABEL(arduino_spi));
-
-static const struct gpio_dt_spec cs_gpio = {
-    .port = DEVICE_DT_GET(DT_NODELABEL(gpio1)),
-    .pin = 12,
-    .dt_flags = GPIO_ACTIVE_LOW
-};
-
-static const struct gpio_dt_spec reset_gpio = {
-    .port = DEVICE_DT_GET(DT_NODELABEL(gpio1)),
-    .pin = 10,
-    .dt_flags = GPIO_ACTIVE_HIGH
-};
-
-static struct spi_config spi_cfg = {
-    .frequency = 1000000,
-    .operation = SPI_OP_MODE_MASTER | SPI_WORD_SET(8) | SPI_TRANSFER_MSB, /* mode 0 */
-    .slave = 0,
-    .cs = { .gpio = cs_gpio, .delay = 0 },
-};
-
-/* ---------- SPI helpers ---------- */
-static uint8_t rfm69_read_reg(uint8_t reg)
+static struct
 {
-    uint8_t tx_buf[2] = { (uint8_t)(reg & 0x7F), 0x00 };
-    uint8_t rx_buf[2] = {0};
+    bool connected;
+    bool connect_result;
+    bool dhcp_bound;
+} context;
 
-    const struct spi_buf tx = { .buf = tx_buf, .len = 2 };
-    const struct spi_buf rx = { .buf = rx_buf, .len = 2 };
-    const struct spi_buf_set tx_set = { .buffers = &tx, .count = 1 };
-    const struct spi_buf_set rx_set = { .buffers = &rx, .count = 1 };
+static struct mqtt_client client;
+static struct sockaddr_storage broker;
 
-    int ret = spi_transceive(spi_dev, &spi_cfg, &tx_set, &rx_set);
-    if (ret < 0) {
-        LOG_ERR("SPI transceive failed: %d", ret);
-        return 0xFF;
+#define MQTT_BROKER_ADDR "54.36.178.49"
+#define MQTT_BROKER_PORT 1883
+#define MQTT_CLIENT_ID "misogate_device_019a0cb4"
+#define MQTT_PUB_TOPIC "test/pub"
+#define MQTT_SUB_TOPIC "test/sub"
+
+/* -------------------- Wi-Fi event handling -------------------- */
+static void handle_wifi_connect_result(struct net_mgmt_event_callback *cb)
+{
+    const struct wifi_status *status = (const struct wifi_status *)cb->info;
+    if (status->status)
+    {
+        LOG_ERR("Connection failed (%d)", status->status);
     }
-    return rx_buf[1];
-}
-
-static int rfm69_write_reg(uint8_t reg, uint8_t val)
-{
-    uint8_t tx_buf[2] = { (uint8_t)(reg | 0x80), val };
-    const struct spi_buf tx = { .buf = tx_buf, .len = 2 };
-    const struct spi_buf_set tx_set = { .buffers = &tx, .count = 1 };
-    int ret = spi_write(spi_dev, &spi_cfg, &tx_set);
-    if (ret < 0) LOG_ERR("SPI write failed %d (reg 0x%02x)", ret, reg);
-    return ret;
-}
-
-/* ---------- Mode control & reset ---------- */
-static void rfm69_write_opmode(uint8_t mode_bits)
-{
-    uint8_t v = OPMODE_SEQUENCER_ON | OPMODE_LISTEN_OFF | (mode_bits & 0x1C);
-    rfm69_write_reg(R_REG_OPMODE, v);
-}
-
-static int rfm69_wait_modeready(int32_t timeout_us)
-{
-    while (timeout_us > 0) {
-        uint8_t f1 = rfm69_read_reg(R_REG_IRQFLAGS1);
-        if (f1 & IRQ1_MODEREADY) return 0;
-        k_busy_wait(100);
-        timeout_us -= 100;
+    else
+    {
+        LOG_INF("Connected to WiFi");
+        context.connected = true;
     }
-    return -ETIMEDOUT;
+    context.connect_result = true;
 }
 
-static int rfm69_set_mode_blocking(uint8_t mode_bits)
+static void handle_wifi_disconnect_result(struct net_mgmt_event_callback *cb)
 {
-    rfm69_write_opmode(mode_bits);
-    if (mode_bits == OPMODE_MODE_SLEEP) {
-        k_msleep(2);
-        return 0;
+    const struct wifi_status *status = (const struct wifi_status *)cb->info;
+    LOG_INF("Disconnected from WiFi (%d)", status->status);
+    context.connected = false;
+}
+
+static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb,
+                                    uint32_t mgmt_event, struct net_if *iface)
+{
+    switch (mgmt_event)
+    {
+    case NET_EVENT_WIFI_CONNECT_RESULT:
+        handle_wifi_connect_result(cb);
+        break;
+    case NET_EVENT_WIFI_DISCONNECT_RESULT:
+        handle_wifi_disconnect_result(cb);
+        break;
+    default:
+        break;
     }
-    return rfm69_wait_modeready(50000);
 }
 
-static void rfm69_reset(void)
+/* -------------------- DHCP event handling -------------------- */
+static void print_dhcp_ip(struct net_mgmt_event_callback *cb)
 {
-    gpio_pin_set_dt(&reset_gpio, 1);
-    k_busy_wait(200);
-    gpio_pin_set_dt(&reset_gpio, 0);
-    k_msleep(15);
+    const struct net_if_dhcpv4 *dhcpv4 = cb->info;
+    const struct in_addr *addr = &dhcpv4->requested_ip;
+    char dhcp_info[64];
+    net_addr_ntop(AF_INET, addr, dhcp_info, sizeof(dhcp_info));
+    LOG_INF("DHCP IP address: %s", dhcp_info);
 }
 
-static int rfm69_wake(void)
+static void net_mgmt_event_handler(struct net_mgmt_event_callback *cb,
+                                   uint32_t mgmt_event, struct net_if *iface)
 {
-    if (rfm69_set_mode_blocking(OPMODE_MODE_SLEEP) < 0) return -EIO;
-    k_msleep(2);
-    if (rfm69_set_mode_blocking(OPMODE_MODE_STDBY) < 0) return -EIO;
+    if (mgmt_event == NET_EVENT_IPV4_DHCP_BOUND)
+    {
+        print_dhcp_ip(cb);
+        context.dhcp_bound = true;
+    }
+}
+
+/* -------------------- Wi-Fi connection -------------------- */
+static void print_mac_address(void)
+{
+    struct net_if *iface = net_if_get_first_wifi();
+    if (iface == NULL)
+    {
+        LOG_ERR("No WiFi interface found");
+        return;
+    }
+
+    struct net_linkaddr *link_addr = net_if_get_link_addr(iface);
+    if (link_addr == NULL)
+    {
+        LOG_ERR("No link address found");
+        return;
+    }
+
+    LOG_INF("WiFi MAC Address: %02x:%02x:%02x:%02x:%02x:%02x",
+            link_addr->addr[0], link_addr->addr[1], link_addr->addr[2],
+            link_addr->addr[3], link_addr->addr[4], link_addr->addr[5]);
+}
+
+static int wifi_connect(void)
+{
+    struct net_if *iface = net_if_get_first_wifi();
+    context.connected = false;
+    context.connect_result = false;
+
+    if (net_mgmt(NET_REQUEST_WIFI_CONNECT_STORED, iface, NULL, 0))
+    {
+        LOG_ERR("Connection request failed");
+        return -ENOEXEC;
+    }
+    LOG_INF("Connection requested");
     return 0;
 }
 
-/* ---------- Radio config (same as TX except DIO map + RSSI) ---------- */
-static int rfm69_init(void)
+/* -------------------- MQTT helper functions -------------------- */
+static void broker_init(void)
 {
-    if (rfm69_wake() < 0) {
-        LOG_ERR("Wake sequence failed");
-        return -EIO;
+    struct sockaddr_in *broker4 = (struct sockaddr_in *)&broker;
+    broker4->sin_family = AF_INET;
+    broker4->sin_port = htons(MQTT_BROKER_PORT);
+
+    int ret = inet_pton(AF_INET, MQTT_BROKER_ADDR, &broker4->sin_addr);
+    if (ret != 1)
+    {
+        LOG_ERR("inet_pton failed: %d", ret);
     }
 
-    /* PHY identical to TX */
-    rfm69_write_reg(R_REG_DATAMODUL, 0x00);      /* packet, FSK, no shaping */
-    rfm69_write_reg(R_REG_BITRATEMSB, 0x02);     /* ~55.556 kbps */
-    rfm69_write_reg(R_REG_BITRATELSB, 0x40);
-    rfm69_write_reg(R_REG_FDEVMSB,   0x03);      /* ~50 kHz */
-    rfm69_write_reg(R_REG_FDEVLSB,   0x33);
-    rfm69_write_reg(R_REG_FRFMSB,    0xE4);      /* 915.000 MHz */
-    rfm69_write_reg(R_REG_FRFMID,    0xC0);
-    rfm69_write_reg(R_REG_FRFLSB,    0x00);
-    rfm69_write_reg(R_REG_PALEVEL,   0x80 | 0x1F); /* harmless in RX */
-    rfm69_write_reg(R_REG_OCP,       0x1A);
-    rfm69_write_reg(R_REG_LNA,       0x88);
-    rfm69_write_reg(R_REG_RXBW,      0x55);
-    rfm69_write_reg(R_REG_PREAMBLEMSB,0x00);
-    rfm69_write_reg(R_REG_PREAMBLELSB,0x03);
-    rfm69_write_reg(R_REG_SYNCCONFIG, 0x88);     /* Sync on, 2 bytes */
-    rfm69_write_reg(R_REG_SYNCVALUE1, 0x2D);
-    rfm69_write_reg(R_REG_SYNCVALUE2, 0xD4);
-    rfm69_write_reg(R_REG_PACKETCONFIG1, 0xD0);  /* var-len + DC-free + CRC */
-    rfm69_write_reg(R_REG_PAYLOADLENGTH, 64);    /* max for var-len */
-    rfm69_write_reg(R_REG_FIFOTHRESH,   0x80 | 15);
-    rfm69_write_reg(R_REG_PACKETCONFIG2,0x02);   /* AES off */
-
-    /* --- RX-specific tweaks --- */
-    rfm69_write_reg(R_REG_DIOMAPPING1, 0x40);    /* DIO0: PayloadReady (RX) */
-    rfm69_write_reg(R_REG_RSSITHRESH,  0xE4);    /* ~-90 dBm */
-
-    if (rfm69_set_mode_blocking(OPMODE_MODE_STDBY) < 0) {
-        LOG_ERR("Standby ModeReady timeout after config");
-        return -EIO;
-    }
-    return 0;
+    char addr_str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &broker4->sin_addr, addr_str, sizeof(addr_str));
+    LOG_INF("Broker configured: %s:%d (parsed to: %s)", MQTT_BROKER_ADDR, MQTT_BROKER_PORT, addr_str);
 }
 
-/* Receive one variable-length packet (<=64 bytes) with timeout (ms) */
-static int rfm69_recv(uint8_t *out, uint8_t *out_len, int32_t timeout_ms)
+static void mqtt_evt_handler(struct mqtt_client *const c,
+                             const struct mqtt_evt *evt)
 {
-    if (!out || !out_len) return -EINVAL;
-
-    (void)rfm69_read_reg(R_REG_IRQFLAGS1);
-    (void)rfm69_read_reg(R_REG_IRQFLAGS2);
-
-    if (rfm69_set_mode_blocking(OPMODE_MODE_RX) < 0) return -EIO;
-
-    int32_t left = timeout_ms;
-    while (left > 0) {
-        uint8_t f2 = rfm69_read_reg(R_REG_IRQFLAGS2);
-        if (f2 & IRQ2_PAYLOADREADY) {
-            /* var-len: first byte is length */
-            uint8_t len = rfm69_read_reg(R_REG_FIFO);
-            if (len == 0 || len > 64) goto restart;
-
-            for (uint8_t i = 0; i < len; i++) {
-                out[i] = rfm69_read_reg(R_REG_FIFO);
-            }
-            *out_len = len;
-
-            (void)rfm69_set_mode_blocking(OPMODE_MODE_STDBY);
-            return 0;
+    switch (evt->type)
+    {
+    case MQTT_EVT_CONNACK:
+        if (evt->result == 0)
+        {
+            LOG_INF("MQTT connected");
+            struct mqtt_topic sub_topic = {
+                .topic = {
+                    .utf8 = (uint8_t *)MQTT_SUB_TOPIC,
+                    .size = strlen(MQTT_SUB_TOPIC)},
+                .qos = MQTT_QOS_1_AT_LEAST_ONCE};
+            struct mqtt_subscription_list subs = {
+                .list = &sub_topic,
+                .list_count = 1,
+                .message_id = 1};
+            mqtt_subscribe(c, &subs);
+            LOG_INF("Subscribed to %s", MQTT_SUB_TOPIC);
         }
-        k_sleep(K_MSEC(1));
-        left -= 1;
+        else
+        {
+            LOG_ERR("MQTT connect failed (%d)", evt->result);
+        }
+        break;
+
+    case MQTT_EVT_PUBLISH:
+        LOG_INF("Received message on %s", evt->param.publish.message.topic.topic.utf8);
+        break;
+
+    case MQTT_EVT_DISCONNECT:
+        LOG_INF("MQTT disconnected (%d)", evt->result);
+        break;
+
+    default:
+        break;
     }
-
-    (void)rfm69_set_mode_blocking(OPMODE_MODE_STDBY);
-    return -ETIMEDOUT;
-
-restart:
-    /* Restart RX packet handler if junk length */
-    uint8_t pc2 = rfm69_read_reg(R_REG_PACKETCONFIG2);
-    rfm69_write_reg(R_REG_PACKETCONFIG2, pc2 | 0x04); /* RestartRx */
-    (void)rfm69_set_mode_blocking(OPMODE_MODE_STDBY);
-    return -EIO;
 }
 
-/* ---------- Main ---------- */
+// static int mqtt_connect_broker(void)
+// {
+//     broker_init();
+//     mqtt_client_init(&client);
+//     client.broker = &broker;
+//     client.evt_cb = mqtt_evt_handler;
+//     client.client_id.utf8 = (uint8_t *)MQTT_CLIENT_ID;
+//     client.client_id.size = strlen(MQTT_CLIENT_ID);
+//     client.protocol_version = MQTT_VERSION_3_1_1;
+//     client.transport.type = MQTT_TRANSPORT_NON_SECURE;
+
+//     int ret = mqtt_connect(&client);
+//     if (ret) {
+//         LOG_ERR("MQTT connect failed: %d", ret);
+//         return ret;
+//     }
+//     LOG_INF("Connecting to MQTT broker...");
+//     return 0;
+// }
+static int mqtt_connect_broker(void)
+{
+    broker_init();
+
+    mqtt_client_init(&client);
+    client.broker = &broker;
+    client.evt_cb = mqtt_evt_handler;
+    client.client_id.utf8 = (uint8_t *)MQTT_CLIENT_ID;
+    client.client_id.size = strlen(MQTT_CLIENT_ID);
+    client.password = NULL;
+    client.user_name = NULL;
+    client.protocol_version = MQTT_VERSION_3_1_1;
+    client.transport.type = MQTT_TRANSPORT_NON_SECURE;
+
+    /* Static buffers to prevent heap allocation */
+    static uint8_t mqtt_rx_buffer[2048];
+    static uint8_t mqtt_tx_buffer[2048];
+    client.rx_buf = mqtt_rx_buffer;
+    client.rx_buf_size = sizeof(mqtt_rx_buffer);
+    client.tx_buf = mqtt_tx_buffer;
+    client.tx_buf_size = sizeof(mqtt_tx_buffer);
+
+    LOG_INF("Connecting to MQTT broker...");
+    int ret = mqtt_connect(&client);
+    if (ret)
+    {
+        LOG_ERR("MQTT connect failed: %d (errno: %d)", ret, errno);
+        return ret;
+    }
+
+    LOG_INF("mqtt_connect() succeeded, socket fd: %d", client.transport.tcp.sock);
+
+    /* Set up poll to wait for connection response */
+    struct pollfd fds[1];
+    fds[0].fd = client.transport.tcp.sock;
+    fds[0].events = POLLIN;
+
+    /* Wait for CONNACK with timeout (5 seconds) */
+    LOG_INF("Waiting for CONNACK...");
+    ret = poll(fds, 1, 5000);
+    if (ret < 0)
+    {
+        LOG_ERR("poll error: %d", errno);
+        mqtt_abort(&client);
+        return -errno;
+    }
+    else if (ret == 0)
+    {
+        LOG_ERR("Connection timeout - no CONNACK received");
+        mqtt_abort(&client);
+        return -ETIMEDOUT;
+    }
+
+    /* Process the CONNACK response */
+    ret = mqtt_input(&client);
+    if (ret != 0)
+    {
+        LOG_ERR("mqtt_input failed: %d", ret);
+        mqtt_abort(&client);
+        return ret;
+    }
+
+    LOG_INF("MQTT connection established");
+    return 0;
+}
+
+/* -------------------- Main -------------------- */
 int main(void)
 {
-    LOG_INF("Misonode RX starting...");
+    LOG_INF("Starting WiFi + MQTT demo");
 
-    if (!device_is_ready(spi_dev)) {
-        LOG_ERR("SPI device not ready");
-        return -1;
-    }
-    if (!device_is_ready(cs_gpio.port) || !device_is_ready(reset_gpio.port)) {
-        LOG_ERR("GPIO ports not ready");
-        return -1;
-    }
-    if (gpio_pin_configure_dt(&reset_gpio, GPIO_OUTPUT_INACTIVE) < 0) {
-        LOG_ERR("Reset GPIO configure failed");
-        return -1;
-    }
+    /* === Dynamic heap availability estimation === */
+    size_t free_estimate = 0;
+    size_t step = 1024; // Allocate in 1 KB chunks
+    void *ptrs[64];
+    int i = 0;
 
-    rfm69_reset();
-
-    uint8_t ver = rfm69_read_reg(RFM69_REG_VERSION);
-    LOG_INF("RFM69 Version: 0x%02x (expect 0x24)", ver);
-    if (ver != 0x24) {
-        LOG_ERR("Unexpected version; check CS/RESET wiring & overlay");
-        return -1;
-    }
-
-    if (rfm69_init() < 0) {
-        uint8_t op  = rfm69_read_reg(R_REG_OPMODE);
-        uint8_t f1  = rfm69_read_reg(R_REG_IRQFLAGS1);
-        uint8_t f2  = rfm69_read_reg(R_REG_IRQFLAGS2);
-        LOG_ERR("RFM69 init failed. OpMode=0x%02x IRQ1=0x%02x IRQ2=0x%02x", op, f1, f2);
-        return -1;
-    }
-    LOG_INF("RFM69 init OK, listening...");
-
-    while (1) {
-        uint8_t buf[64], n = 0;
-        int rc = rfm69_recv(buf, &n, 1000);
-        if (rc == 0) {
-            /* ensure printable for the log */
-            if (n < sizeof(buf)) buf[n] = 0;
-            LOG_INF("RX: len=%u \"%s\"", n, buf);
-        } else if (rc != -ETIMEDOUT) {
-            LOG_WRN("RX error: %d", rc);
+    for (i = 0; i < 64; i++)
+    {
+        ptrs[i] = k_malloc(step);
+        if (ptrs[i] == NULL)
+        {
+            break;
         }
-        /* keep listening; short pause optional */
+        free_estimate += step;
     }
+
+    LOG_INF("Estimated free heap before MQTT: ~%zu bytes", free_estimate);
+
+    for (int j = 0; j < i; j++)
+    {
+        k_free(ptrs[j]);
+    }
+
+    /* --- Network setup --- */
+    net_mgmt_init_event_callback(&wifi_mgmt_cb, wifi_mgmt_event_handler, WIFI_MGMT_EVENTS);
+    net_mgmt_add_event_callback(&wifi_mgmt_cb);
+    net_mgmt_init_event_callback(&net_mgmt_cb, net_mgmt_event_handler, NET_EVENT_IPV4_DHCP_BOUND);
+    net_mgmt_add_event_callback(&net_mgmt_cb);
+
+    k_sleep(K_SECONDS(1));
+    wifi_connect();
+
+    while (!context.connect_result)
+    {
+        k_sleep(K_MSEC(100));
+    }
+
+    if (!context.connected)
+    {
+        LOG_ERR("Failed to connect WiFi");
+        return -1;
+    }
+
+    LOG_INF("WiFi connected successfully!");
+    print_mac_address();
+
+    LOG_INF("Waiting for DHCP...");
+
+    while (!context.dhcp_bound)
+    {
+        k_sleep(K_MSEC(100));
+    }
+
+    LOG_INF("DHCP complete, testing network connectivity...");
+
+    /* Test basic TCP connectivity to broker before trying MQTT */
+    int test_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (test_sock < 0)
+    {
+        LOG_ERR("Failed to create test socket: %d", errno);
+    }
+    else
+    {
+        struct sockaddr_in test_addr;
+        test_addr.sin_family = AF_INET;
+        test_addr.sin_port = htons(MQTT_BROKER_PORT);
+        inet_pton(AF_INET, MQTT_BROKER_ADDR, &test_addr.sin_addr);
+
+        LOG_INF("Testing TCP connection to %s:%d...", MQTT_BROKER_ADDR, MQTT_BROKER_PORT);
+        int conn_ret = connect(test_sock, (struct sockaddr *)&test_addr, sizeof(test_addr));
+        if (conn_ret < 0)
+        {
+            LOG_ERR("TCP connection test failed: %d (errno: %d)", conn_ret, errno);
+            LOG_ERR("This suggests network routing or firewall issue");
+        }
+        else
+        {
+            LOG_INF("TCP connection test SUCCEEDED!");
+        }
+        close(test_sock);
+        k_sleep(K_MSEC(500));
+    }
+
+    LOG_INF("Starting MQTT connection...");
+
+    if (mqtt_connect_broker() != 0)
+    {
+        LOG_ERR("Failed to connect to MQTT broker");
+        return -1;
+    }
+
+    /* Wait a bit after connection before publishing */
+    k_sleep(K_SECONDS(1));
+
+    /* Publish initial message */
+    const char *payload = "Hello from misogate!";
+    struct mqtt_publish_param param;
+    param.message.topic.topic.utf8 = (uint8_t *)MQTT_PUB_TOPIC;
+    param.message.topic.topic.size = strlen(MQTT_PUB_TOPIC);
+    param.message.payload.data = (uint8_t *)payload;
+    param.message.payload.len = strlen(payload);
+    param.message_id = 1234;
+    param.message.topic.qos = MQTT_QOS_0_AT_MOST_ONCE;
+    param.dup_flag = 0U;
+    param.retain_flag = 0U;
+
+    int ret = mqtt_publish(&client, &param);
+    if (ret == 0)
+    {
+        LOG_INF("Published message to %s", MQTT_PUB_TOPIC);
+    }
+    else
+    {
+        LOG_ERR("Failed to publish: %d", ret);
+    }
+
+    /* Main MQTT loop with proper polling */
+    struct pollfd fds[1];
+    fds[0].fd = client.transport.tcp.sock;
+    fds[0].events = POLLIN;
+
+    while (1)
+    {
+        /* Poll for incoming data with 1 second timeout */
+        ret = poll(fds, 1, 1000);
+        if (ret > 0)
+        {
+            /* Data available, process it */
+            ret = mqtt_input(&client);
+            if (ret != 0)
+            {
+                LOG_ERR("mqtt_input error: %d", ret);
+                break;
+            }
+        }
+        else if (ret < 0)
+        {
+            LOG_ERR("poll error: %d", errno);
+            break;
+        }
+
+        /* Send keep-alive ping if needed */
+        ret = mqtt_live(&client);
+        if (ret != 0 && ret != -EAGAIN)
+        {
+            LOG_ERR("mqtt_live error: %d", ret);
+            break;
+        }
+
+        k_sleep(K_MSEC(100));
+    }
+
+    LOG_ERR("MQTT loop exited, disconnecting");
+    mqtt_disconnect(&client, NULL);
+    return 0;
 }
