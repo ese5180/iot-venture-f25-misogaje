@@ -143,7 +143,6 @@
 //         return 0;
 // }
 
-
 // #include <zephyr/logging/log.h>
 // LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -156,8 +155,7 @@
 // #include <stdio.h>
 // #include <string.h>
 // #include <zephyr/sys/sys_heap.h>
-// #include <zephyr/sys/mem_stats.h> 
-
+// #include <zephyr/sys/mem_stats.h>
 
 // #define WIFI_MGMT_EVENTS (NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT)
 
@@ -328,8 +326,7 @@
 //   //     struct sys_heap_runtime_stats stats;
 //   //     sys_heap_runtime_stats_get(&_system_heap, &stats);
 //    //     LOG_INF("Free heap before MQTT: %u bytes", stats.free_bytes);
-   
- 
+
 //    //     size_t free_estimate = 0;
 //   //     size_t step = 1024;  // 每次尝试分配 1 KB
 //   //     void *ptr = NULL;
@@ -342,7 +339,7 @@
 //    //     LOG_INF("Estimated free heap before MQTT: ~%zu bytes", free_estimate);
 //    //     k_sleep(K_MSEC(100));
 //    //     //LOG_PANIC();   // 强制立即输出日志，防止被覆盖
-         
+
 //      size_t free_estimate = 0;
 //      size_t step = 1024;  // 每次尝试分配 1 KB
 //      void *ptrs[64];      // 存放已分配的指针
@@ -362,9 +359,6 @@
 //       for (int j = 0; j < i; j++) {
 //       k_free(ptrs[j]);
 //      }
-
-
-
 
 //     net_mgmt_init_event_callback(&wifi_mgmt_cb, wifi_mgmt_event_handler, WIFI_MGMT_EVENTS);
 //     net_mgmt_add_event_callback(&wifi_mgmt_cb);
@@ -430,27 +424,32 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 static struct net_mgmt_event_callback wifi_mgmt_cb;
 static struct net_mgmt_event_callback net_mgmt_cb;
 
-static struct {
+static struct
+{
     bool connected;
     bool connect_result;
+    bool dhcp_bound;
 } context;
 
 static struct mqtt_client client;
 static struct sockaddr_storage broker;
 
-#define MQTT_BROKER_ADDR "test.mosquitto.org"
+#define MQTT_BROKER_ADDR "54.36.178.49"
 #define MQTT_BROKER_PORT 1883
-#define MQTT_CLIENT_ID   "misogate_device"
-#define MQTT_PUB_TOPIC   "test/pub"
-#define MQTT_SUB_TOPIC   "test/sub"
+#define MQTT_CLIENT_ID "misogate_device_019a0cb4"
+#define MQTT_PUB_TOPIC "test/pub"
+#define MQTT_SUB_TOPIC "test/sub"
 
 /* -------------------- Wi-Fi event handling -------------------- */
 static void handle_wifi_connect_result(struct net_mgmt_event_callback *cb)
 {
     const struct wifi_status *status = (const struct wifi_status *)cb->info;
-    if (status->status) {
+    if (status->status)
+    {
         LOG_ERR("Connection failed (%d)", status->status);
-    } else {
+    }
+    else
+    {
         LOG_INF("Connected to WiFi");
         context.connected = true;
     }
@@ -467,7 +466,8 @@ static void handle_wifi_disconnect_result(struct net_mgmt_event_callback *cb)
 static void wifi_mgmt_event_handler(struct net_mgmt_event_callback *cb,
                                     uint32_t mgmt_event, struct net_if *iface)
 {
-    switch (mgmt_event) {
+    switch (mgmt_event)
+    {
     case NET_EVENT_WIFI_CONNECT_RESULT:
         handle_wifi_connect_result(cb);
         break;
@@ -492,8 +492,10 @@ static void print_dhcp_ip(struct net_mgmt_event_callback *cb)
 static void net_mgmt_event_handler(struct net_mgmt_event_callback *cb,
                                    uint32_t mgmt_event, struct net_if *iface)
 {
-    if (mgmt_event == NET_EVENT_IPV4_DHCP_BOUND) {
+    if (mgmt_event == NET_EVENT_IPV4_DHCP_BOUND)
+    {
         print_dhcp_ip(cb);
+        context.dhcp_bound = true;
     }
 }
 
@@ -504,7 +506,8 @@ static int wifi_connect(void)
     context.connected = false;
     context.connect_result = false;
 
-    if (net_mgmt(NET_REQUEST_WIFI_CONNECT_STORED, iface, NULL, 0)) {
+    if (net_mgmt(NET_REQUEST_WIFI_CONNECT_STORED, iface, NULL, 0))
+    {
         LOG_ERR("Connection request failed");
         return -ENOEXEC;
     }
@@ -519,30 +522,32 @@ static void broker_init(void)
     broker4->sin_family = AF_INET;
     broker4->sin_port = htons(MQTT_BROKER_PORT);
     inet_pton(AF_INET, MQTT_BROKER_ADDR, &broker4->sin_addr);
+    LOG_INF("Broker address: %s:%d", MQTT_BROKER_ADDR, MQTT_BROKER_PORT);
 }
 
 static void mqtt_evt_handler(struct mqtt_client *const c,
                              const struct mqtt_evt *evt)
 {
-    switch (evt->type) {
+    switch (evt->type)
+    {
     case MQTT_EVT_CONNACK:
-        if (evt->result == 0) {
+        if (evt->result == 0)
+        {
             LOG_INF("MQTT connected");
             struct mqtt_topic sub_topic = {
                 .topic = {
                     .utf8 = (uint8_t *)MQTT_SUB_TOPIC,
-                    .size = strlen(MQTT_SUB_TOPIC)
-                },
-                .qos = MQTT_QOS_1_AT_LEAST_ONCE
-            };
+                    .size = strlen(MQTT_SUB_TOPIC)},
+                .qos = MQTT_QOS_1_AT_LEAST_ONCE};
             struct mqtt_subscription_list subs = {
                 .list = &sub_topic,
                 .list_count = 1,
-                .message_id = 1
-            };
+                .message_id = 1};
             mqtt_subscribe(c, &subs);
             LOG_INF("Subscribed to %s", MQTT_SUB_TOPIC);
-        } else {
+        }
+        else
+        {
             LOG_ERR("MQTT connect failed (%d)", evt->result);
         }
         break;
@@ -582,6 +587,7 @@ static void mqtt_evt_handler(struct mqtt_client *const c,
 static int mqtt_connect_broker(void)
 {
     broker_init();
+
     mqtt_client_init(&client);
     client.broker = &broker;
     client.evt_cb = mqtt_evt_handler;
@@ -600,7 +606,8 @@ static int mqtt_connect_broker(void)
     /* 🆕 >>> End of added block <<< */
 
     int ret = mqtt_connect(&client);
-    if (ret) {
+    if (ret)
+    {
         LOG_ERR("MQTT connect failed: %d", ret);
         return ret;
     }
@@ -609,7 +616,6 @@ static int mqtt_connect_broker(void)
     return 0;
 }
 
-
 /* -------------------- Main -------------------- */
 int main(void)
 {
@@ -617,13 +623,15 @@ int main(void)
 
     /* === Dynamic heap availability estimation === */
     size_t free_estimate = 0;
-    size_t step = 1024;   // Allocate in 1 KB chunks
+    size_t step = 1024; // Allocate in 1 KB chunks
     void *ptrs[64];
     int i = 0;
 
-    for (i = 0; i < 64; i++) {
+    for (i = 0; i < 64; i++)
+    {
         ptrs[i] = k_malloc(step);
-        if (ptrs[i] == NULL) {
+        if (ptrs[i] == NULL)
+        {
             break;
         }
         free_estimate += step;
@@ -631,7 +639,8 @@ int main(void)
 
     LOG_INF("Estimated free heap before MQTT: ~%zu bytes", free_estimate);
 
-    for (int j = 0; j < i; j++) {
+    for (int j = 0; j < i; j++)
+    {
         k_free(ptrs[j]);
     }
 
@@ -644,18 +653,28 @@ int main(void)
     k_sleep(K_SECONDS(1));
     wifi_connect();
 
-    while (!context.connect_result) {
+    while (!context.connect_result)
+    {
         k_sleep(K_MSEC(100));
     }
 
-    if (!context.connected) {
+    if (!context.connected)
+    {
         LOG_ERR("Failed to connect WiFi");
         return -1;
     }
 
-    LOG_INF("WiFi connected, starting MQTT...");
+    LOG_INF("WiFi connected, waiting for DHCP...");
 
-    if (mqtt_connect_broker() == 0) {
+    while (!context.dhcp_bound)
+    {
+        k_sleep(K_MSEC(100));
+    }
+
+    LOG_INF("DHCP complete, starting MQTT...");
+
+    if (mqtt_connect_broker() == 0)
+    {
         k_sleep(K_SECONDS(2));
         const char *payload = "Hello from misogate!";
         struct mqtt_publish_param param;
@@ -671,7 +690,8 @@ int main(void)
         LOG_INF("Published message to %s", MQTT_PUB_TOPIC);
     }
 
-    while (1) {
+    while (1)
+    {
         mqtt_input(&client);
         mqtt_live(&client);
         k_sleep(K_MSEC(500));
