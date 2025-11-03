@@ -28,4 +28,35 @@ config STA_SAMPLE_START_WIFI_THREAD_STACK_SIZE
 	default 4096
 	help
 	  Set the stack size for the Wi-Fi start thread.
+
+config MQTT_BROKER_ADDR
+	string "MQTT Broker IP Address"
+	default "54.36.178.49"
+	help
+	  Specify the IP address of the MQTT broker to connect to.
+
+config MQTT_BROKER_PORT
+	int "MQTT Broker Port"
+	default 1883
+	help
+	  Specify the port number of the MQTT broker.
+
+config MQTT_CLIENT_ID
+	string "MQTT Client ID"
+	default "misogate_device_019a0cb4"
+	help
+	  Specify the unique client ID for this MQTT device.
+
+config MQTT_PUB_TOPIC
+	string "MQTT Publish Topic"
+	default "test/pub"
+	help
+	  Specify the default topic for publishing messages.
+
+config MQTT_SUB_TOPIC
+	string "MQTT Subscribe Topic"
+	default "test/sub"
+	help
+	  Specify the default topic for subscribing to messages.
+
 endmenu
