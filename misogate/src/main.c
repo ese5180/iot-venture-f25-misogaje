@@ -1,121 +1,399 @@
-
-#include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
-
 #include <zephyr/kernel.h>
-#include <zephyr/net/socket.h>
-#include <zephyr/net/net_ip.h>
+#include <zephyr/sys/reboot.h>
+#include <zephyr/dfu/mcuboot.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/logging/log_ctrl.h>
+#include <zephyr/net/conn_mgr_connectivity.h>
+#include <zephyr/net/conn_mgr_monitor.h>
+#include <net/aws_iot.h>
 #include <stdio.h>
-#include <string.h>
-#include <errno.h>
-#include <zephyr/sys/sys_heap.h>
-#include <zephyr/sys/mem_stats.h>
-#include "wifi.h"
-#include "mqtt.h"
+#include <stdlib.h>
+#include <hw_id.h>
+#include <modem/modem_info.h>
 
-/* -------------------- Main -------------------- */
-int main(void)
+#include "json_payload.h"
+
+/* Register log module */
+LOG_MODULE_REGISTER(misogate, CONFIG_MISOGATE_LOG_LEVEL);
+
+/* Macros used to subscribe to specific Zephyr NET management events. */
+#define L4_EVENT_MASK (NET_EVENT_L4_CONNECTED | NET_EVENT_L4_DISCONNECTED)
+#define CONN_LAYER_EVENT_MASK (NET_EVENT_CONN_IF_FATAL_ERROR)
+
+#define MODEM_FIRMWARE_VERSION_SIZE_MAX 50
+
+#define MISOGATE_PUB "misogate/pub"
+#define MISOGATE_SUB "misogate/sub"
+
+#define FATAL_ERROR()                              \
+    LOG_ERR("Fatal error! Rebooting the device."); \
+    LOG_PANIC();                                   \
+    IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)))
+
+/* Zephyr NET management event callback structures. */
+static struct net_mgmt_event_callback l4_cb;
+static struct net_mgmt_event_callback conn_cb;
+
+static char hw_id[HW_ID_LEN];
+
+/* Forward declarations. */
+static void shadow_update_work_fn(struct k_work *work);
+static void connect_work_fn(struct k_work *work);
+static void aws_iot_event_handler(const struct aws_iot_evt *const evt);
+
+static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
+static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
+
+static int app_topics_subscribe(void)
 {
-    LOG_INF("Starting WiFi + MQTT demo");
-
-    /* === Dynamic heap availability estimation === */
-    size_t free_estimate = 0;
-    size_t step = 1024; // Allocate in 1 KB chunks
-    void *ptrs[64];
-    int i = 0;
-
-    for (i = 0; i < 64; i++)
-    {
-        ptrs[i] = k_malloc(step);
-        if (ptrs[i] == NULL)
+    int err;
+    static const struct mqtt_topic topic_list[] = {
         {
-            break;
+            .topic.utf8 = MISOGATE_PUB,
+            .topic.size = strlen(MISOGATE_PUB) - 1,
+            .qos = MQTT_QOS_1_AT_LEAST_ONCE,
+        },
+        {
+            .topic.utf8 = MISOGATE_SUB,
+            .topic.size = strlen(MISOGATE_SUB) - 1,
+            .qos = MQTT_QOS_1_AT_LEAST_ONCE,
+        }};
+
+    err = aws_iot_application_topics_set(topic_list, ARRAY_SIZE(topic_list));
+    if (err)
+    {
+        LOG_ERR("aws_iot_application_topics_set, error: %d", err);
+        FATAL_ERROR();
+        return err;
+    }
+
+    return 0;
+}
+
+static int aws_iot_client_init(void)
+{
+    int err;
+
+    err = aws_iot_init(aws_iot_event_handler);
+    if (err)
+    {
+        LOG_ERR("AWS IoT library could not be initialized, error: %d", err);
+        FATAL_ERROR();
+        return err;
+    }
+
+    err = app_topics_subscribe();
+    if (err)
+    {
+        LOG_ERR("Adding application specific topics failed, error: %d", err);
+        FATAL_ERROR();
+        return err;
+    }
+
+    return 0;
+}
+
+static void shadow_update_work_fn(struct k_work *work)
+{
+    int err;
+    char message[CONFIG_AWS_IOT_JSON_MESSAGE_SIZE_MAX] = {0};
+    struct payload payload = {
+        .state.reported.uptime = k_uptime_get(),
+        .state.reported.app_version = CONFIG_MISOGATE_APP_VERSION,
+    };
+    struct aws_iot_data tx_data = {
+        .qos = MQTT_QOS_0_AT_MOST_ONCE,
+        .topic.type = AWS_IOT_SHADOW_TOPIC_UPDATE,
+    };
+
+    if (IS_ENABLED(CONFIG_MODEM_INFO))
+    {
+        char modem_version_temp[MODEM_FIRMWARE_VERSION_SIZE_MAX];
+
+        err = modem_info_get_fw_version(modem_version_temp,
+                                        ARRAY_SIZE(modem_version_temp));
+        if (err)
+        {
+            LOG_ERR("modem_info_get_fw_version, error: %d", err);
+            FATAL_ERROR();
+            return;
         }
-        free_estimate += step;
+
+        payload.state.reported.modem_version = modem_version_temp;
     }
 
-    LOG_INF("Estimated free heap before MQTT: ~%zu bytes", free_estimate);
-
-    for (int j = 0; j < i; j++)
+    err = json_payload_construct(message, sizeof(message), &payload);
+    if (err)
     {
-        k_free(ptrs[j]);
+        LOG_ERR("json_payload_construct, error: %d", err);
+        FATAL_ERROR();
+        return;
     }
 
-    /* --- Network setup --- */
-    wifi_init();
+    tx_data.ptr = message;
+    tx_data.len = strlen(message);
 
-    k_sleep(K_SECONDS(1));
+    LOG_INF("Publishing message: %s to AWS IoT shadow", message);
 
-    if (wifi_connect() != 0)
+    err = aws_iot_send(&tx_data);
+    if (err)
     {
-        LOG_ERR("Failed to request WiFi connection");
-        return -1;
+        LOG_ERR("aws_iot_send, error: %d", err);
+        FATAL_ERROR();
+        return;
     }
 
-    /* Wait for connection with timeout (30 seconds) */
-    if (wifi_wait_for_connection(30000) != 0)
+    (void)k_work_reschedule(&shadow_update_work,
+                            K_SECONDS(CONFIG_AWS_IOT_PUBLICATION_INTERVAL_SECONDS));
+}
+
+static void connect_work_fn(struct k_work *work)
+{
+    int err;
+    const struct aws_iot_config config = {
+        .client_id = hw_id,
+    };
+
+    LOG_INF("Connecting to AWS IoT");
+
+    err = aws_iot_connect(&config);
+    if (err == -EAGAIN)
     {
-        return -1;
+        LOG_INF("Connection attempt timed out, "
+                "Next connection retry in %d seconds",
+                CONFIG_AWS_IOT_CONNECTION_RETRY_TIMEOUT_SECONDS);
+
+        (void)k_work_reschedule(&connect_work,
+                                K_SECONDS(CONFIG_AWS_IOT_CONNECTION_RETRY_TIMEOUT_SECONDS));
+    }
+    else if (err)
+    {
+        LOG_ERR("aws_iot_connect, error: %d", err);
+        FATAL_ERROR();
+    }
+}
+
+/* Functions that are executed on specific connection-related events. */
+static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
+{
+    (void)k_work_cancel_delayable(&connect_work);
+
+    if (evt->data.persistent_session)
+    {
+        LOG_WRN("Persistent session is enabled, using subscriptions "
+                "from the previous session");
     }
 
-    wifi_print_mac_address();
+    /* Mark image as working to avoid reverting to the former image after a reboot. */
+#if defined(CONFIG_BOOTLOADER_MCUBOOT)
+    LOG_INF("Confirming image");
+    boot_write_img_confirmed();
+#endif
 
-    /* Wait for DHCP with timeout (30 seconds) */
-    if (wifi_wait_for_dhcp(30000) != 0)
+    /* Start sequential updates to AWS IoT. */
+    (void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
+}
+
+static void on_aws_iot_evt_disconnected(void)
+{
+    (void)k_work_cancel_delayable(&shadow_update_work);
+    (void)k_work_reschedule(&connect_work, K_SECONDS(5));
+}
+
+static void on_aws_iot_evt_fota_done(const struct aws_iot_evt *const evt)
+{
+    int err;
+
+    /* Tear down MQTT connection. */
+    (void)aws_iot_disconnect();
+    (void)k_work_cancel_delayable(&connect_work);
+
+    /* If modem FOTA has been carried out, the modem needs to be reinitialized.
+     * This is carried out by bringing the network interface down/up.
+     */
+    if (evt->data.image & DFU_TARGET_IMAGE_TYPE_ANY_MODEM)
     {
-        LOG_ERR("DHCP timeout");
-        return -1;
+        LOG_INF("Modem FOTA done, reinitializing the modem");
+
+        err = conn_mgr_all_if_down(true);
+        if (err)
+        {
+            LOG_ERR("conn_mgr_all_if_down, error: %d", err);
+            FATAL_ERROR();
+            return;
+        }
+
+        err = conn_mgr_all_if_up(true);
+        if (err)
+        {
+            LOG_ERR("conn_mgr_all_if_up, error: %d", err);
+            FATAL_ERROR();
+            return;
+        }
+
+        err = conn_mgr_all_if_connect(true);
+        if (err)
+        {
+            LOG_ERR("conn_mgr_all_if_connect, error: %d", err);
+            FATAL_ERROR();
+            return;
+        }
     }
-
-    LOG_INF("Testing network connectivity...");
-
-    /* Test basic TCP connectivity to broker before trying MQTT */
-    int test_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (test_sock < 0)
+    else if (evt->data.image & DFU_TARGET_IMAGE_TYPE_ANY_APPLICATION)
     {
-        LOG_ERR("Failed to create test socket: %d", errno);
+        LOG_INF("Application FOTA done, rebooting");
+        IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)));
     }
     else
     {
-        struct sockaddr_in test_addr;
-        test_addr.sin_family = AF_INET;
-        test_addr.sin_port = htons(CONFIG_MQTT_BROKER_PORT);
-        inet_pton(AF_INET, CONFIG_MQTT_BROKER_ADDR, &test_addr.sin_addr);
-
-        LOG_INF("Testing TCP connection to %s:%d...", CONFIG_MQTT_BROKER_ADDR, CONFIG_MQTT_BROKER_PORT);
-        int conn_ret = connect(test_sock, (struct sockaddr *)&test_addr, sizeof(test_addr));
-        if (conn_ret < 0)
-        {
-            LOG_ERR("TCP connection test failed: %d (errno: %d)", conn_ret, errno);
-            LOG_ERR("This suggests network routing or firewall issue");
-        }
-        else
-        {
-            LOG_INF("TCP connection test SUCCEEDED!");
-        }
-        close(test_sock);
-        k_sleep(K_MSEC(500));
+        LOG_WRN("Unexpected FOTA image type");
     }
+}
 
-    LOG_INF("Starting MQTT connection...");
+static void on_net_event_l4_connected(void)
+{
+    (void)k_work_reschedule(&connect_work, K_SECONDS(5));
+}
 
-    if (mqtt_connect_broker() != 0)
+static void on_net_event_l4_disconnected(void)
+{
+    (void)aws_iot_disconnect();
+    (void)k_work_cancel_delayable(&connect_work);
+    (void)k_work_cancel_delayable(&shadow_update_work);
+}
+
+/* Event handlers */
+
+static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
+{
+    switch (evt->type)
     {
-        LOG_ERR("Failed to connect to MQTT broker");
-        return -1;
+    case AWS_IOT_EVT_CONNECTING:
+        LOG_INF("AWS_IOT_EVT_CONNECTING");
+        break;
+    case AWS_IOT_EVT_CONNECTED:
+        LOG_INF("AWS_IOT_EVT_CONNECTED");
+        on_aws_iot_evt_connected(evt);
+        break;
+    case AWS_IOT_EVT_DISCONNECTED:
+        LOG_INF("AWS_IOT_EVT_DISCONNECTED");
+        on_aws_iot_evt_disconnected();
+        break;
+    case AWS_IOT_EVT_DATA_RECEIVED:
+        LOG_INF("AWS_IOT_EVT_DATA_RECEIVED");
+
+        LOG_INF("Received message: \"%.*s\" on topic: \"%.*s\"", evt->data.msg.len,
+                evt->data.msg.ptr,
+                evt->data.msg.topic.len,
+                evt->data.msg.topic.str);
+        break;
+    case AWS_IOT_EVT_PUBACK:
+        LOG_INF("AWS_IOT_EVT_PUBACK, message ID: %d", evt->data.message_id);
+        break;
+    case AWS_IOT_EVT_PINGRESP:
+        LOG_INF("AWS_IOT_EVT_PINGRESP");
+        break;
+    case AWS_IOT_EVT_FOTA_START:
+        LOG_INF("AWS_IOT_EVT_FOTA_START");
+        break;
+    case AWS_IOT_EVT_FOTA_ERASE_PENDING:
+        LOG_INF("AWS_IOT_EVT_FOTA_ERASE_PENDING");
+        break;
+    case AWS_IOT_EVT_FOTA_ERASE_DONE:
+        LOG_INF("AWS_FOTA_EVT_ERASE_DONE");
+        break;
+    case AWS_IOT_EVT_FOTA_DONE:
+        LOG_INF("AWS_IOT_EVT_FOTA_DONE");
+        on_aws_iot_evt_fota_done(evt);
+        break;
+    case AWS_IOT_EVT_FOTA_DL_PROGRESS:
+        LOG_INF("AWS_IOT_EVT_FOTA_DL_PROGRESS, (%d%%)", evt->data.fota_progress);
+        break;
+    case AWS_IOT_EVT_ERROR:
+        LOG_INF("AWS_IOT_EVT_ERROR, %d", evt->data.err);
+        FATAL_ERROR();
+        break;
+    case AWS_IOT_EVT_FOTA_ERROR:
+        LOG_INF("AWS_IOT_EVT_FOTA_ERROR");
+        break;
+    default:
+        LOG_WRN("Unknown AWS IoT event type: %d", evt->type);
+        break;
+    }
+}
+
+static void l4_event_handler(struct net_mgmt_event_callback *cb,
+                             uint32_t event,
+                             struct net_if *iface)
+{
+    switch (event)
+    {
+    case NET_EVENT_L4_CONNECTED:
+        LOG_INF("Network connectivity established");
+        on_net_event_l4_connected();
+        break;
+    case NET_EVENT_L4_DISCONNECTED:
+        LOG_INF("Network connectivity lost");
+        on_net_event_l4_disconnected();
+        break;
+    default:
+        /* Don't care */
+        return;
+    }
+}
+
+static void connectivity_event_handler(struct net_mgmt_event_callback *cb,
+                                       uint32_t event,
+                                       struct net_if *iface)
+{
+    if (event == NET_EVENT_CONN_IF_FATAL_ERROR)
+    {
+        LOG_ERR("NET_EVENT_CONN_IF_FATAL_ERROR");
+        FATAL_ERROR();
+        return;
+    }
+}
+
+int main(void)
+{
+    LOG_INF("misogate started, firmware version: %s", CONFIG_MISOGATE_APP_VERSION);
+
+    int err;
+
+    /* Setup handler for Zephyr NET Connection Manager events. */
+    net_mgmt_init_event_callback(&l4_cb, l4_event_handler, L4_EVENT_MASK);
+    net_mgmt_add_event_callback(&l4_cb);
+
+    /* Setup handler for Zephyr NET Connection Manager Connectivity layer. */
+    net_mgmt_init_event_callback(&conn_cb, connectivity_event_handler, CONN_LAYER_EVENT_MASK);
+    net_mgmt_add_event_callback(&conn_cb);
+
+    LOG_INF("bringing network interface up and connecting to the network");
+
+    err = conn_mgr_all_if_up(true);
+    if (err)
+    {
+        LOG_ERR("conn_mgr_all_if_up, error: %d", err);
+        FATAL_ERROR();
+        return err;
     }
 
-    /* Wait a bit after connection before publishing */
-    k_sleep(K_SECONDS(1));
+    err = conn_mgr_all_if_connect(true);
+    if (err)
+    {
+        LOG_ERR("conn_mgr_all_if_connect, error: %d", err);
+        FATAL_ERROR();
+        return err;
+    }
 
-    /* Publish initial message */
-    const char *payload = "Hello from misogate!";
-    mqtt_publish_message(CONFIG_MQTT_PUB_TOPIC, payload);
+    err = aws_iot_client_init();
 
-    /* Run main MQTT loop (this function runs indefinitely) */
-    int ret = mqtt_run_loop();
+    if (err)
+    {
+        LOG_ERR("aws_iot_client_init, error: %d", err);
+        FATAL_ERROR();
+        return err;
+    }
 
-    LOG_ERR("MQTT loop exited with error: %d", ret);
-    mqtt_disconnect_broker();
-    return ret;
+    return 0;
 }
