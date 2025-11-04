@@ -11,3 +11,4 @@ target_sources(app PRIVATE
 	src/mqtt.c
 )
 
+target_link_libraries(app PRIVATE aws_iot)
