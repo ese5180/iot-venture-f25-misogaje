@@ -116,3 +116,36 @@ SRS-03: Gateway shall fuse ≥3 node readings into TBM position & heading using 
 SRS-04: Gateway shall publish telemetry via MQTT in JSON format required  (chainage, easting, northing, elevation, heading:
 
 { “team”: <string-formatted team name>, “timestamp”: <UNIX timestamp>, “mining”: <boolean mining flag>, “chainage”: <float-formatted chainage in m>, “easting”: <float-formatted easting in m>, “northing”: <float-formatted northing in m>, “elevation”: <float-formatted elevation in m>, “roll”: <float-formatted roll in radians>, “pitch”: <float-formatted pitch in radians>, “heading”: <float-formatted heading in radians>, “extra”: { “optionalSensor”: <data>, “otherOptionalSensor”: <data>, }
+
+## Secure Firmware Updates
+
+### (3.5.1) Draw and describe your bootloading process. Answer the following questions:
+
+Zephyr uses the MCUboot as the bootloader. The application core is updated first by downloading the new app core into mcuboot_secondary memory which is swapped into mcuboot_primary. The net core is then updated by loading the new net core firmware into mcuboot_secondary which is swapped into the net core through the PCD drivers.
+![](/images/3.5.1appcore.png)
+![](/images/3.5.1netcore.png)
+
+**How large is your bootloader?**
+Using MCUBoot the bootloader is 30-40kb and our build is 43kb
+
+**How large is your existing application code?**
+Our app code is 877kb.
+
+**Does the bootloader or application code handle the firmware image download?**
+The application code downloads the firmware image.
+
+**What wireless communication is used to download the images to your device?**
+WiFi
+
+**If you have multiple wireless communications at your disposal, why did you choose this method?**
+Since we’re using MQTT via WiFi we chose WiFi. BLE wasn't needed as that would require an additional device to perform the firmware update.
+
+**Where are the downloaded firmware images stored?**
+AWS S3 Storage Bucket
+
+
+**What features have you enabled to handle firmware update failures?**
+We enabled MCUboot's automatic rollback mechanism which requires new firmware to explicitly confirm itself by calling `img_mgmt_state_confirm()` after a successful boot. If the new firmware crashes or fails to confirm before the next reboot, MCUboot automatically reverts to the previous working firmware version, preventing the device from being bricked by faulty updates.
+
+
+
