@@ -12,16 +12,13 @@ LOG_MODULE_REGISTER(misonode, LOG_LEVEL_INF);
 
 #define NODE_ID 0x01
 
+size_t packet_build_secure_frame_encmac(uint8_t node_id, uint32_t tx_seq,
+    const struct mag_sample *m_in, uint8_t *out, size_t out_max);
+
 void main(void)
 {
-    const struct device *lora_dev;
-    int ret;
-    static uint32_t tx_seq = 0;
-
-    LOG_INF("misonode: booted, starting LoRa TX loop");
-
-    lora_dev = DEVICE_DT_GET(DT_ALIAS(lora0));
-    if (!device_is_ready(lora_dev)) {
+    const struct device *lora = DEVICE_DT_GET(DT_ALIAS(lora0));
+    if (!device_is_ready(lora)) {
         LOG_ERR("LoRa device not ready");
         return;
     }
@@ -37,43 +34,28 @@ void main(void)
         .iq_inverted    = false,
         .public_network = true,
     };
-
-    ret = lora_config(lora_dev, &cfg);
-    if (ret < 0) {
-        LOG_ERR("lora_config (TX) failed: %d", ret);
+    if (lora_config(lora, &cfg) < 0) {
+        LOG_ERR("lora_config failed");
         return;
     }
 
+    LOG_INF("misonode: TX (Encrypt-then-MAC, SipHash + stream)");
+
+    uint32_t tx_seq = 0;
     while (1) {
         struct mag_sample m;
-        uint8_t frame[32];
-        size_t frame_len;
-
         mag_read(&m);
 
-        frame_len = packet_build_secure_frame(
-            NODE_ID,
-            tx_seq,
-            &m,
-            frame,
-            sizeof(frame)
-        );
-
-        if (frame_len == 0) {
-            LOG_ERR("packet_build_secure_frame failed");
+        uint8_t frame[SECURE_FRAME_LEN];
+        size_t len = packet_build_secure_frame_encmac(NODE_ID, tx_seq, &m, frame, sizeof(frame));
+        if (len == 0) {
+            LOG_ERR("build frame failed");
         } else {
-            ret = lora_send(lora_dev, frame, frame_len);
-            if (ret < 0) {
-                LOG_ERR("lora_send err %d", ret);
-            } else {
-                LOG_INF("misonode: sent node=%u seq=%u len=%u",
-                        (unsigned)NODE_ID,
-                        (unsigned)tx_seq,
-                        (unsigned)frame_len);
-                tx_seq++;
-            }
+            int rc = lora_send(lora, frame, len);
+            if (rc < 0) LOG_ERR("lora_send err %d", rc);
+            else        LOG_INF("sent node=%u seq=%u len=%u", NODE_ID, tx_seq, (unsigned)len);
+            tx_seq++;
         }
-
-        k_sleep(K_SECONDS(5)); // your current 5s spacing
+        k_sleep(K_SECONDS(5));
     }
 }
