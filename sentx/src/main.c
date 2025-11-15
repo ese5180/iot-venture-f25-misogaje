@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdio.h>
 
+
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
 /* ==================== MMC5983MA 定义 ==================== */
@@ -20,6 +21,37 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 /* ==================== LoRa SX1276 定义 ==================== */
 #define LORA_FREQ_HZ  915000000UL
 #define TX_POWER      14
+
+
+// 简单打包函数
+static void pack_mag_data(uint8_t *buf, uint32_t seq, int32_t x, int32_t y, int32_t z)
+{
+    buf[0] = 0x01;  // node ID
+    
+    // 序列号 (4 bytes)
+    buf[1] = (seq >> 0) & 0xFF;
+    buf[2] = (seq >> 8) & 0xFF;
+    buf[3] = (seq >> 16) & 0xFF;
+    buf[4] = (seq >> 24) & 0xFF;
+    
+    // X (4 bytes)
+    buf[5] = (x >> 0) & 0xFF;
+    buf[6] = (x >> 8) & 0xFF;
+    buf[7] = (x >> 16) & 0xFF;
+    buf[8] = (x >> 24) & 0xFF;
+    
+    // Y (4 bytes)
+    buf[9] = (y >> 0) & 0xFF;
+    buf[10] = (y >> 8) & 0xFF;
+    buf[11] = (y >> 16) & 0xFF;
+    buf[12] = (y >> 24) & 0xFF;
+    
+    // Z (4 bytes)
+    buf[13] = (z >> 0) & 0xFF;
+    buf[14] = (z >> 8) & 0xFF;
+    buf[15] = (z >> 16) & 0xFF;
+    buf[16] = (z >> 24) & 0xFF;
+}
 
 static struct spi_dt_spec lora_spi =
     SPI_DT_SPEC_GET(DT_NODELABEL(rfm95),
@@ -213,14 +245,18 @@ void main(void)
                     (double)x_g, (double)y_g, (double)z_g, (double)mag);
             
             // 格式化为字符串并发送
-            char message[64];
-            snprintf(message, sizeof(message),
-                     "#%lu X:%.2f Y:%.2f Z:%.2f M:%.2f",
-                     (unsigned long)packet_count,
-                     (double)x_g, (double)y_g, (double)z_g, (double)mag);
+            // char message[64];
+            // snprintf(message, sizeof(message),
+            //          "#%lu X:%.2f Y:%.2f Z:%.2f M:%.2f",
+            //          (unsigned long)packet_count,
+            //          (double)x_g, (double)y_g, (double)z_g, (double)mag);
             
-            LOG_INF("Sending: %s", message);
-            sx1276_send_packet((uint8_t*)message, strlen(message));
+            // LOG_INF("Sending: %s", message);
+            // sx1276_send_packet((uint8_t*)message, strlen(message));
+			uint8_t packet[17];  // 1+4+4+4+4 = 17 bytes
+            pack_mag_data(packet, packet_count, x, y, z);
+            LOG_INF("Sending binary packet #%lu", packet_count);
+            sx1276_send_packet(packet, 17);
             
             packet_count++;
         } else {

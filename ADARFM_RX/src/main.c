@@ -5,6 +5,7 @@
 #include <zephyr/drivers/spi.h>
 #include <zephyr/logging/log.h>
 #include <string.h>
+#include <math.h> 
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
@@ -19,6 +20,41 @@ static struct spi_dt_spec lora_spi =
     SPI_DT_SPEC_GET(DT_NODELABEL(rfm95),
                     SPI_WORD_SET(8) | SPI_TRANSFER_MSB,
                     0);
+
+/* ================= 数据解包函数 ================= */
+static void unpack_mag_data(const uint8_t *buf, 
+                            uint8_t *node_id,
+                            uint32_t *seq, 
+                            int32_t *x, 
+                            int32_t *y, 
+                            int32_t *z)
+{
+    *node_id = buf[0];
+    
+    // 序列号 (4 bytes, little-endian)
+    *seq = ((uint32_t)buf[1] << 0) |
+           ((uint32_t)buf[2] << 8) |
+           ((uint32_t)buf[3] << 16) |
+           ((uint32_t)buf[4] << 24);
+    
+    // X (4 bytes, little-endian, signed)
+    *x = ((int32_t)buf[5] << 0) |
+         ((int32_t)buf[6] << 8) |
+         ((int32_t)buf[7] << 16) |
+         ((int32_t)buf[8] << 24);
+    
+    // Y (4 bytes)
+    *y = ((int32_t)buf[9] << 0) |
+         ((int32_t)buf[10] << 8) |
+         ((int32_t)buf[11] << 16) |
+         ((int32_t)buf[12] << 24);
+    
+    // Z (4 bytes)
+    *z = ((int32_t)buf[13] << 0) |
+         ((int32_t)buf[14] << 8) |
+         ((int32_t)buf[15] << 16) |
+         ((int32_t)buf[16] << 24);
+}
 
 /* ================= SPI 基础读写 ================= */
 static void sx1276_write_reg(uint8_t reg, uint8_t val)
@@ -221,26 +257,55 @@ while (1)
         
             sx1276_write_reg(0x0D, fifo_rx_curr);
             sx1276_read_fifo(buf, pktlen);
-            buf[pktlen] = 0;
-            LOG_INF("RECV: %s", buf);
-          }  else {
-            LOG_WRN("CRC error, dropped");
-          }
 
-          sx1276_write_reg(0x12, 0x40);
-    
-          // 重置FIFO
-           sx1276_write_reg(0x0D, 0x00);
+             if (pktlen == 17) {  // 检查是否是正确的数据包长度
+             uint8_t node_id;
+             uint32_t seq;
+             int32_t x, y, z;
+        
+             unpack_mag_data(buf, &node_id, &seq, &x, &y, &z);
+        
+             // 转换成 Gauss
+             float x_g = x * 0.0000625f;
+             float y_g = y * 0.0000625f;
+             float z_g = z * 0.0000625f;
+             float mag = sqrtf(x_g*x_g + y_g*y_g + z_g*z_g);
+        
+             LOG_INF("Node:%u Seq:%lu X:%.3f Y:%.3f Z:%.3f |M|:%.3f G",
+                node_id, (unsigned long)seq,
+                (double)x_g, (double)y_g, (double)z_g, (double)mag);
+               } else {
+             LOG_WRN("Invalid packet length: %u (expected 17)", pktlen);
+              }
+         } 
+          
+
+
+
+
+
+
+      //         buf[pktlen] = 0;
+      //         LOG_INF("RECV: %s", buf);
+      //       }  else {
+      //         LOG_WRN("CRC error, dropped");
+      //       }
+
+            sx1276_write_reg(0x12, 0x40);
+      
+            // 重置FIFO
+             sx1276_write_reg(0x0D, 0x00);
     
          
-           // LOG_INF("Packet handled, back to RX mode");
+             // LOG_INF("Packet handled, back to RX mode");
          
-       }
+      //    }
 
            k_msleep(50);
 
  
      }
+    }
 }
 
 
