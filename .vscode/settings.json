@@ -3,6 +3,7 @@
   "C_Cpp.errorSquiggles": "enabled",
   "nrf-connect.applications": [
     "${workspaceFolder}/misogate",
-    "${workspaceFolder}\\misonode"
+    "${workspaceFolder}\\misonode",
+    "${workspaceFolder}\\sentx"
   ]
 }
