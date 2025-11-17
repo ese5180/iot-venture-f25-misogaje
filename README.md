@@ -69,7 +69,9 @@ Utilities Contractors and government agencies such as Progressive Pipeline Manag
 
 The Boring Company (TBC) & other full size TBM constructors
 
-#### Call with Cole Kenny, GNC engineer at TBC, host of NABC:
+#### Cole Kenny, GNC engineer at TBC:
+
+##### Call 1:
 
 Liked that we are trying to avoid electronics inside the TBM and push everything to the surface (eliminating failure points), also a novel method no one did before.
 
@@ -82,6 +84,43 @@ Whether the magnetic field would be strong enough at 5 ft depth, especially with
 Urban magnetic clutter (rebar, vehicles, power lines) and whether we can filter that out.
 
 Surface logistics (laying out and leapfrogging nodes during a dig).
+
+##### Call 2:
+
+Key Positive Feedback
+
+-Comms infrastructure substantially complete:He noted that having LoRa node→gateway comms, Nordic Wi-Fi MQTT uplink, encryption, and OTA update flow already functioning puts us in a good spot: most teams in NABC don't even show up with working MQTT.
+
+-Strong approval for “no electronics inside TBM” design: He described the magnet-on-nose + surface node approach as “simple, robust, and very TBC-style,” minimizing water ingress and vibration failure points.
+
+-High marks for testability: The fact that the system can be fully validated above ground (tripod tests → steel box for attenuation → rail simulation for positioning) is great for lean development and fits well with NABC rules, which requires offline navigation testing without a tunnel.
+
+-Product market potential: Cole remarked that a stable, steel-invariant magnetic system could be useful beyond NABC—including microtunneling contractors and horizontal directional drilling (HDD)—because of its simplicity and no-modification requirement on the TBM.
+
+Concerns Identified
+
+-Magnetic calibration & solver stability: He emphasized that the dipole inversion + EKF solver is the hardest part and warned against heading flips and bias drift if not carefully calibrated.
+
+-Steel distortion of magnetic field: The TBM nose will significantly reshape the magnetic field; we must account for this with: steel-analog test fixtures, offset modeling, and baseline distortion confirmation.
+
+-Environmental noise: External ferrous objects, power generators, and moving machinery can introduce noise. This is not the case for NABC, but it is a risk for real deployments (especially for unmarked metal pipes). He recommended node SNR weighting and robust outlier rejection.
+
+-Operational logistics:Node placement and leapfrogging during a real dig will require a clear SOP, ensuring sensors remain aligned with the TBM path.
+
+Guidance for Next Steps
+
+-Lock the communication architecture (LoRa nodes → LoRa gateway → Nordic MQTT): No more rewrites. Shift fully to sensing and solving.
+
+-Focus engineering effort on the magnetic solver and calibration: Node bias removal, Earth/background subtraction, Heading stability, Weighted dipole fitting, EKF smoothing
+
+-Test with steel before a real TBM: use a low-cost steel pipe or metal cabinet analog to understand field distortion early.
+
+-Prepare inspector-ready evidence: Air-depth test results, Steel-attenuation test, rail demonstration, Live MQTT feed at 0.1 Hz.
+These satisfy all NABC navigation rules.
+
+Overall Stakeholder Outlook
+
+Cole described the system as feasible, innovative, and competitive, provided that calibration and heading stability receive focused attention. He reinforced that our progress in communications, encryption, and OTA updates significantly de-risks the project and that our architecture is aligned with TBC engineering philosophy.
 
 ### System-Level Diagrams
 
