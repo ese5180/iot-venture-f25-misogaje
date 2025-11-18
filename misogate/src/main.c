@@ -12,6 +12,7 @@
 #include <modem/modem_info.h>
 
 #include "json_payload.h"
+#include "mqtt/mqtt.h"
 
 /* Register log module */
 LOG_MODULE_REGISTER(misogate, CONFIG_MISOGATE_LOG_LEVEL);
@@ -21,9 +22,6 @@ LOG_MODULE_REGISTER(misogate, CONFIG_MISOGATE_LOG_LEVEL);
 #define CONN_LAYER_EVENT_MASK (NET_EVENT_CONN_IF_FATAL_ERROR)
 
 #define MODEM_FIRMWARE_VERSION_SIZE_MAX 50
-
-#define MISOGATE_PUB "misogate/pub"
-#define MISOGATE_SUB "misogate/sub"
 
 #define FATAL_ERROR()                              \
     LOG_ERR("Fatal error! Rebooting the device."); \
@@ -44,32 +42,6 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt);
 static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
 
-static int app_topics_subscribe(void)
-{
-    int err;
-    static const struct mqtt_topic topic_list[] = {
-        {
-            .topic.utf8 = MISOGATE_PUB,
-            .topic.size = strlen(MISOGATE_PUB) - 1,
-            .qos = MQTT_QOS_1_AT_LEAST_ONCE,
-        },
-        {
-            .topic.utf8 = MISOGATE_SUB,
-            .topic.size = strlen(MISOGATE_SUB) - 1,
-            .qos = MQTT_QOS_1_AT_LEAST_ONCE,
-        }};
-
-    err = aws_iot_application_topics_set(topic_list, ARRAY_SIZE(topic_list));
-    if (err)
-    {
-        LOG_ERR("aws_iot_application_topics_set, error: %d", err);
-        FATAL_ERROR();
-        return err;
-    }
-
-    return 0;
-}
-
 static int aws_iot_client_init(void)
 {
     int err;
@@ -82,10 +54,11 @@ static int aws_iot_client_init(void)
         return err;
     }
 
-    err = app_topics_subscribe();
+    /* Initialize MQTT application topics */
+    err = mqtt_init();
     if (err)
     {
-        LOG_ERR("Adding application specific topics failed, error: %d", err);
+        LOG_ERR("MQTT initialization failed, error: %d", err);
         FATAL_ERROR();
         return err;
     }
@@ -281,11 +254,8 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
         break;
     case AWS_IOT_EVT_DATA_RECEIVED:
         LOG_INF("AWS_IOT_EVT_DATA_RECEIVED");
-
-        LOG_INF("Received message: \"%.*s\" on topic: \"%.*s\"", evt->data.msg.len,
-                evt->data.msg.ptr,
-                evt->data.msg.topic.len,
-                evt->data.msg.topic.str);
+        /* Handle MQTT data received on application topics */
+        mqtt_handle_received_data(evt);
         break;
     case AWS_IOT_EVT_PUBACK:
         LOG_INF("AWS_IOT_EVT_PUBACK, message ID: %d", evt->data.message_id);
