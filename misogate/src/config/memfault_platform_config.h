@@ -5,4 +5,3 @@
 
 /* Define the metrics config file to include our custom metrics */
 #define MEMFAULT_METRICS_HEARTBEAT_CONFIG_FILE "memfault_metrics_heartbeat_config.def"
-

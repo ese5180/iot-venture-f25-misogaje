@@ -13,11 +13,11 @@ project(nrf_connect_sdk_intermediate)
 target_sources(app PRIVATE src/main.c)
 target_sources(app PRIVATE src/json_payload/json_payload.c)
 target_sources(app PRIVATE src/mqtt/mqtt.c)
-# NORDIC SDK APP END
 
 zephyr_include_directories(src)
 zephyr_include_directories(src/json_payload)
 zephyr_include_directories(src/mqtt)
+zephyr_include_directories(src/config)
 
 # Make folder containing certificates global so that it can be located by the MQTT helper library.
 zephyr_include_directories_ifdef(CONFIG_MQTT_HELPER_PROVISION_CERTIFICATES certs)

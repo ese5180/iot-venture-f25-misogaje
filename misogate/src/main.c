@@ -5,6 +5,7 @@
 #include <zephyr/logging/log_ctrl.h>
 #include <zephyr/net/conn_mgr_connectivity.h>
 #include <zephyr/net/conn_mgr_monitor.h>
+#include <dk_buttons_and_leds.h>
 #include <net/aws_iot.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,7 +14,7 @@
 
 #include "json_payload.h"
 #include "mqtt/mqtt.h"
-#include <memfault/metrics/metrics.h>
+// #include <memfault/metrics/metrics.h>
 
 /* Register log module */
 LOG_MODULE_REGISTER(misogate, CONFIG_MISOGATE_LOG_LEVEL);
@@ -38,10 +39,59 @@ static char hw_id[HW_ID_LEN];
 /* Forward declarations. */
 static void shadow_update_work_fn(struct k_work *work);
 static void connect_work_fn(struct k_work *work);
+static void position_update_work_fn(struct k_work *work);
 static void aws_iot_event_handler(const struct aws_iot_evt *const evt);
 
 static K_WORK_DELAYABLE_DEFINE(shadow_update_work, shadow_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
+static K_WORK_DELAYABLE_DEFINE(position_update_work, position_update_work_fn);
+
+static int counter = 0;
+static int connection_retries = 0;
+static bool aws_iot_initialized = false;
+
+static void button_handler(uint32_t button_state, uint32_t has_changed)
+{
+    if (has_changed & DK_BTN1_MSK)
+    {
+        if (button_state & DK_BTN1_MSK)
+        {
+            if (counter < 255)
+            {
+                counter++;
+                LOG_INF("Counter incremented: %d", counter);
+            }
+        }
+    }
+
+    if (has_changed & DK_BTN2_MSK)
+    {
+        if (button_state & DK_BTN2_MSK)
+        {
+            if (counter > 0)
+            {
+                counter--;
+                LOG_INF("Counter decremented: %d", counter);
+            }
+        }
+    }
+}
+
+static void position_update_work_fn(struct k_work *work)
+{
+    char message[64];
+    int err;
+
+    snprintf(message, sizeof(message), "{\"position\": %d}", counter);
+
+    err = mqtt_publish_json(message, strlen(message), MQTT_QOS_0_AT_MOST_ONCE);
+    if (err)
+    {
+        LOG_ERR("Failed to publish position update, error: %d", err);
+    }
+
+    (void)k_work_reschedule(&position_update_work, K_SECONDS(5));
+}
 
 static int aws_iot_client_init(void)
 {
@@ -128,8 +178,20 @@ static void connect_work_fn(struct k_work *work)
         .client_id = hw_id,
     };
 
+    if (!aws_iot_initialized)
+    {
+        err = aws_iot_client_init();
+        if (err)
+        {
+            LOG_ERR("aws_iot_client_init, error: %d", err);
+            FATAL_ERROR();
+            return;
+        }
+        aws_iot_initialized = true;
+    }
+
     LOG_INF("Connecting to AWS IoT");
-    memfault_metrics_heartbeat_add(MEMFAULT_METRICS_KEY(wifi_connection_attempts), 1);
+    // memfault_metrics_heartbeat_add(MEMFAULT_METRICS_KEY(wifi_connection_attempts), 1);
 
     err = aws_iot_connect(&config);
     if (err == -EAGAIN)
@@ -143,15 +205,26 @@ static void connect_work_fn(struct k_work *work)
     }
     else if (err)
     {
-        LOG_ERR("aws_iot_connect, error: %d", err);
-        FATAL_ERROR();
+        connection_retries++;
+        if (connection_retries <= 3)
+        {
+            LOG_WRN("AWS IoT connection failed (error: %d), retrying in %d seconds (Attempt %d/3)",
+                    err, CONFIG_AWS_IOT_CONNECTION_RETRY_TIMEOUT_SECONDS, connection_retries);
+            (void)k_work_reschedule(&connect_work,
+                                    K_SECONDS(CONFIG_AWS_IOT_CONNECTION_RETRY_TIMEOUT_SECONDS));
+        }
+        else
+        {
+            LOG_ERR("aws_iot_connect failed after 3 attempts, error: %d", err);
+            FATAL_ERROR();
+        }
     }
 }
 
-/* Functions that are executed on specific connection-related events. */
 static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 {
     (void)k_work_cancel_delayable(&connect_work);
+    connection_retries = 0;
 
     if (evt->data.persistent_session)
     {
@@ -167,11 +240,13 @@ static void on_aws_iot_evt_connected(const struct aws_iot_evt *const evt)
 
     /* Start sequential updates to AWS IoT. */
     (void)k_work_reschedule(&shadow_update_work, K_NO_WAIT);
+    (void)k_work_reschedule(&position_update_work, K_SECONDS(5));
 }
 
 static void on_aws_iot_evt_disconnected(void)
 {
     (void)k_work_cancel_delayable(&shadow_update_work);
+    (void)k_work_cancel_delayable(&position_update_work);
     (void)k_work_reschedule(&connect_work, K_SECONDS(5));
 }
 
@@ -185,9 +260,8 @@ static void on_net_event_l4_disconnected(void)
     (void)aws_iot_disconnect();
     (void)k_work_cancel_delayable(&connect_work);
     (void)k_work_cancel_delayable(&shadow_update_work);
+    (void)k_work_cancel_delayable(&position_update_work);
 }
-
-/* Event handlers */
 
 static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
 {
@@ -240,7 +314,6 @@ static void l4_event_handler(struct net_mgmt_event_callback *cb,
         on_net_event_l4_disconnected();
         break;
     default:
-        /* Don't care */
         return;
     }
 }
@@ -271,6 +344,14 @@ int main(void)
     net_mgmt_init_event_callback(&conn_cb, connectivity_event_handler, CONN_LAYER_EVENT_MASK);
     net_mgmt_add_event_callback(&conn_cb);
 
+    err = dk_buttons_init(button_handler);
+    if (err)
+    {
+        LOG_ERR("dk_buttons_init, error: %d", err);
+        FATAL_ERROR();
+        return err;
+    }
+
     LOG_INF("bringing network interface up and connecting to the network");
 
     err = conn_mgr_all_if_up(true);
@@ -285,15 +366,6 @@ int main(void)
     if (err)
     {
         LOG_ERR("conn_mgr_all_if_connect, error: %d", err);
-        FATAL_ERROR();
-        return err;
-    }
-
-    err = aws_iot_client_init();
-
-    if (err)
-    {
-        LOG_ERR("aws_iot_client_init, error: %d", err);
         FATAL_ERROR();
         return err;
     }
