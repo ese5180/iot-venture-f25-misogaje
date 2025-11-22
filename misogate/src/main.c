@@ -13,6 +13,7 @@
 
 #include "json_payload.h"
 #include "mqtt/mqtt.h"
+#include <memfault/metrics/metrics.h>
 
 /* Register log module */
 LOG_MODULE_REGISTER(misogate, CONFIG_MISOGATE_LOG_LEVEL);
@@ -128,6 +129,7 @@ static void connect_work_fn(struct k_work *work)
     };
 
     LOG_INF("Connecting to AWS IoT");
+    memfault_metrics_heartbeat_add(MEMFAULT_METRICS_KEY(wifi_connection_attempts), 1);
 
     err = aws_iot_connect(&config);
     if (err == -EAGAIN)
@@ -173,56 +175,6 @@ static void on_aws_iot_evt_disconnected(void)
     (void)k_work_reschedule(&connect_work, K_SECONDS(5));
 }
 
-static void on_aws_iot_evt_fota_done(const struct aws_iot_evt *const evt)
-{
-    int err;
-
-    /* Tear down MQTT connection. */
-    (void)aws_iot_disconnect();
-    (void)k_work_cancel_delayable(&connect_work);
-
-    /* If modem FOTA has been carried out, the modem needs to be reinitialized.
-     * This is carried out by bringing the network interface down/up.
-     */
-    if (evt->data.image & DFU_TARGET_IMAGE_TYPE_ANY_MODEM)
-    {
-        LOG_INF("Modem FOTA done, reinitializing the modem");
-
-        err = conn_mgr_all_if_down(true);
-        if (err)
-        {
-            LOG_ERR("conn_mgr_all_if_down, error: %d", err);
-            FATAL_ERROR();
-            return;
-        }
-
-        err = conn_mgr_all_if_up(true);
-        if (err)
-        {
-            LOG_ERR("conn_mgr_all_if_up, error: %d", err);
-            FATAL_ERROR();
-            return;
-        }
-
-        err = conn_mgr_all_if_connect(true);
-        if (err)
-        {
-            LOG_ERR("conn_mgr_all_if_connect, error: %d", err);
-            FATAL_ERROR();
-            return;
-        }
-    }
-    else if (evt->data.image & DFU_TARGET_IMAGE_TYPE_ANY_APPLICATION)
-    {
-        LOG_INF("Application FOTA done, rebooting");
-        IF_ENABLED(CONFIG_REBOOT, (sys_reboot(0)));
-    }
-    else
-    {
-        LOG_WRN("Unexpected FOTA image type");
-    }
-}
-
 static void on_net_event_l4_connected(void)
 {
     (void)k_work_reschedule(&connect_work, K_SECONDS(5));
@@ -263,28 +215,9 @@ static void aws_iot_event_handler(const struct aws_iot_evt *const evt)
     case AWS_IOT_EVT_PINGRESP:
         LOG_INF("AWS_IOT_EVT_PINGRESP");
         break;
-    case AWS_IOT_EVT_FOTA_START:
-        LOG_INF("AWS_IOT_EVT_FOTA_START");
-        break;
-    case AWS_IOT_EVT_FOTA_ERASE_PENDING:
-        LOG_INF("AWS_IOT_EVT_FOTA_ERASE_PENDING");
-        break;
-    case AWS_IOT_EVT_FOTA_ERASE_DONE:
-        LOG_INF("AWS_FOTA_EVT_ERASE_DONE");
-        break;
-    case AWS_IOT_EVT_FOTA_DONE:
-        LOG_INF("AWS_IOT_EVT_FOTA_DONE");
-        on_aws_iot_evt_fota_done(evt);
-        break;
-    case AWS_IOT_EVT_FOTA_DL_PROGRESS:
-        LOG_INF("AWS_IOT_EVT_FOTA_DL_PROGRESS, (%d%%)", evt->data.fota_progress);
-        break;
     case AWS_IOT_EVT_ERROR:
         LOG_INF("AWS_IOT_EVT_ERROR, %d", evt->data.err);
         FATAL_ERROR();
-        break;
-    case AWS_IOT_EVT_FOTA_ERROR:
-        LOG_INF("AWS_IOT_EVT_FOTA_ERROR");
         break;
     default:
         LOG_WRN("Unknown AWS IoT event type: %d", evt->type);
