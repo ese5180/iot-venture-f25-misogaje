@@ -1,8 +1,8 @@
-name: Build Firmware
+name: Build SentX Firmware
 
 on:
   push:
-    branches: [ main, mia/rxtx ]
+    branches: [ main, develop ]
   pull_request:
     branches: [ main ]
 
@@ -16,24 +16,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          path: app
+          path: workspace
 
       - name: Initialize Zephyr workspace
-        working-directory: app
+        working-directory: workspace
         run: |
-          west init -l .
+          west init -l sentx              # Points to sentx folder
           west update
           west zephyr-export
 
-      - name: Build firmware
-        working-directory: app
+      - name: Build sentx firmware
+        working-directory: workspace
         run: |
-          west build -b nrf5340dk_nrf5340_cpuapp
-          # Or whatever your board target is
+          west build -p -b nrf5340dk_nrf5340_cpuapp sentx  # Builds sentx
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v4
         with:
-          name: firmware-hex
-          path: app/build/zephyr/zephyr.hex
+          name: sentx-firmware
+          path: workspace/build/zephyr/zephyr.hex
           retention-days: 30
