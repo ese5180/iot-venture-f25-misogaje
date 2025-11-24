@@ -1,2 +1,0 @@
-MEMFAULT_METRICS_KEY_DEFINE(wifi_connection_attempts, kMemfaultMetricType_Unsigned)
-

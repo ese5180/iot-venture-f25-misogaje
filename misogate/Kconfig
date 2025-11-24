@@ -4,32 +4,31 @@
 # SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
 #
 
-menu "AWS IoT Sample Settings"
+menu "Misogate Configuration"
 
 config MISOGATE_APP_VERSION
 	string "Application version"
-	default "v1.0.0"
+	default "0.0.1"
 
-config AWS_IOT_JSON_MESSAGE_SIZE_MAX
-	int "Maximum size of JSON messages"
-	default 200
-	help
-	  Maximum size of JSON messages that are sent to AWS IoT.
+config MISOGATE_MQTT_BROKER_HOSTNAME
+	string "MQTT Broker Hostname"
+	default "c1412829227647ae9f57545fe534a511.s1.eu.hivemq.cloud"
 
-config AWS_IOT_PUBLICATION_INTERVAL_SECONDS
-	int "Interval in seconds that the sample will publish data"
-	default 60
+config MISOGATE_MQTT_BROKER_PORT
+	int "MQTT Broker Port"
+	default 8883
 
-config AWS_IOT_CONNECTION_RETRY_TIMEOUT_SECONDS
-	int "Number of seconds between each AWS IoT connection retry"
-	default 30
+config MISOGATE_MQTT_CLIENT_ID
+	string "MQTT Client ID"
+	default "misogate"
 
-config MISOGATE_DEVICE_HW_ID
-	bool "Use HW ID as device ID"
-	select AWS_IOT_CLIENT_ID_APP
-	depends on HW_ID_LIBRARY
-	help
-	  Use the devices's hardware ID as device ID when connecting to AWS IOT
+config MISOGATE_MQTT_USERNAME
+	string "MQTT Username"
+	default "default"
+
+config MISOGATE_MQTT_PASSWORD
+	string "MQTT Password"
+	default "default"
 
 module = MISOGATE
 module-str = MISOGATE
