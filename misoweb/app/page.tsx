@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { TunnelBoringMachine } from "./components/TunnelBoringMachine";
-import { useAwsIotMqtt } from "./hooks/useAwsIotMqtt";
+import { useMqtt } from "./hooks/useMqtt";
 import { useAuth } from "./contexts/AuthContext";
 
 export default function Home() {
@@ -13,26 +13,31 @@ export default function Home() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
   // Load configuration from environment variables
-  const endpoint =
-    process.env.NEXT_PUBLIC_AWS_IOT_ENDPOINT ||
-    "a1nqctvl2kwinw-ats.iot.us-east-2.amazonaws.com";
-  const region = process.env.NEXT_PUBLIC_AWS_REGION || "us-east-2";
-  const identityPoolId = process.env.NEXT_PUBLIC_COGNITO_IDENTITY_POOL_ID;
+  const mqttUrl =
+    process.env.NEXT_PUBLIC_MQTT_URL ||
+    "c1412829227647ae9f57545fe534a511.s1.eu.hivemq.cloud";
+  const mqttPort = process.env.NEXT_PUBLIC_MQTT_PORT
+    ? parseInt(process.env.NEXT_PUBLIC_MQTT_PORT)
+    : 8883;
+  const mqttUsername = process.env.NEXT_PUBLIC_MQTT_USERNAME || "misogate";
+  const mqttPassword = process.env.NEXT_PUBLIC_MQTT_PASSWORD || "";
   const topic = process.env.NEXT_PUBLIC_MQTT_TOPIC || "misogate/pub";
 
-  // AWS IoT connection - only connect when user is logged in
-  const awsIotConnection = useAwsIotMqtt(
+  // MQTT connection - only connect when user is logged in
+  const mqttConnection = useMqtt(
     user
       ? {
-          endpoint,
-          region,
-          identityPoolId: identityPoolId || undefined,
+          url: mqttUrl,
+          port: mqttPort,
+          username: mqttUsername,
+          password: mqttPassword,
+          protocol: "wss",
         }
       : undefined,
     user ? [topic] : [],
   );
 
-  const { isConnected, messages, error } = awsIotConnection;
+  const { isConnected, messages, error } = mqttConnection;
 
   // Persist position - no auto-reset
 
@@ -183,11 +188,11 @@ export default function Home() {
                 <div>
                   <div className="font-semibold text-gray-900 dark:text-white">
                     {isConnected
-                      ? "Connected to AWS IoT"
-                      : "Connecting to AWS IoT..."}
+                      ? "Connected to MQTT Broker"
+                      : "Connecting to MQTT Broker..."}
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-400">
-                    {endpoint} - {topic}
+                    {mqttUrl}:{mqttPort} - {topic}
                   </div>
                   {lastUpdate && (
                     <div className="text-xs text-gray-500 dark:text-gray-500">
