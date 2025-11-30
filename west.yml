@@ -1,0 +1,47 @@
+# =============================================================================
+# West Manifest for misogate/misonode Project
+# =============================================================================
+# This manifest sets up the Zephyr workspace with required dependencies.
+# For nRF Connect SDK projects, this pulls in Zephyr and Nordic modules.
+# =============================================================================
+
+manifest:
+  version: "1.0"
+  
+  # Self reference - this repo is the manifest repository
+  self:
+    path: .
+
+  remotes:
+    - name: zephyrproject-rtos
+      url-base: https://github.com/zephyrproject-rtos
+    - name: nrfconnect
+      url-base: https://github.com/nrfconnect
+    - name: memfault
+      url-base: https://github.com/memfault
+
+  projects:
+    # Zephyr RTOS
+    - name: zephyr
+      remote: zephyrproject-rtos
+      revision: main
+      import:
+        # Import Zephyr's dependencies (HALs, etc.)
+        name-allowlist:
+          - cmsis
+          - hal_nordic
+          - mbedtls
+          - mcuboot
+          - net-tools
+          - picolibc
+          - tinycrypt
+
+    # Memfault SDK (as referenced in your misogate/west.yml)
+    - name: memfault-firmware-sdk
+      remote: memfault
+      path: modules/lib/memfault-firmware-sdk
+      revision: 1.9.0
+
+  # Group configuration for optional modules
+  group-filter:
+    - -optional

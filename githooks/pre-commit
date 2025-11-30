@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Pre-commit hook: Runs clang-format and cppcheck on staged C/C++ files
+# Install: cp githooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+# =============================================================================
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(c|h|cpp|hpp)$' || true)
+
+if [ -z "$STAGED_FILES" ]; then
+    echo "✓ No C/C++ files staged, skipping pre-commit checks."
+    exit 0
+fi
+
+echo "========================================"
+echo "Pre-commit: Checking staged C/C++ files"
+echo "========================================"
+
+# -----------------------------------------------------------------------------
+# 1. clang-format check
+# -----------------------------------------------------------------------------
+CLANG_FORMAT=""
+for cmd in clang-format clang-format-14 clang-format-15 clang-format-16; do
+    if command -v "$cmd" &> /dev/null; then
+        CLANG_FORMAT="$cmd"
+        break
+    fi
+done
+
+if [ -n "$CLANG_FORMAT" ]; then
+    echo ""
+    echo "→ Running clang-format..."
+    FORMAT_ERRORS=0
+    
+    for file in $STAGED_FILES; do
+        if [ -f "$REPO_ROOT/$file" ]; then
+            # Check if file needs formatting
+            if ! $CLANG_FORMAT --style=file --dry-run --Werror "$REPO_ROOT/$file" 2>/dev/null; then
+                echo "  ✗ $file needs formatting"
+                FORMAT_ERRORS=1
+            else
+                echo "  ✓ $file"
+            fi
+        fi
+    done
+    
+    if [ "$FORMAT_ERRORS" -eq 1 ]; then
+        echo ""
+        echo "ERROR: Some files need formatting. Run:"
+        echo "  clang-format -i <file>"
+        echo ""
+        echo "Or format all staged files:"
+        echo "  git diff --cached --name-only --diff-filter=ACM | grep -E '\\.(c|h|cpp|hpp)\$' | xargs clang-format -i"
+        exit 1
+    fi
+    echo "✓ clang-format passed"
+else
+    echo "⚠ clang-format not found, skipping format check"
+fi
+
+# -----------------------------------------------------------------------------
+# 2. cppcheck static analysis
+# -----------------------------------------------------------------------------
+if command -v cppcheck &> /dev/null; then
+    echo ""
+    echo "→ Running cppcheck..."
+    
+    CPPCHECK_ERRORS=0
+    for file in $STAGED_FILES; do
+        if [ -f "$REPO_ROOT/$file" ]; then
+            # Run cppcheck with Zephyr-friendly settings
+            if ! cppcheck --error-exitcode=1 \
+                          --enable=warning,performance,portability \
+                          --suppress=missingIncludeSystem \
+                          --suppress=unusedFunction \
+                          --suppress=unmatchedSuppression \
+                          --quiet \
+                          "$REPO_ROOT/$file" 2>&1; then
+                CPPCHECK_ERRORS=1
+            fi
+        fi
+    done
+    
+    if [ "$CPPCHECK_ERRORS" -eq 1 ]; then
+        echo ""
+        echo "ERROR: cppcheck found issues. Please fix them before committing."
+        exit 1
+    fi
+    echo "✓ cppcheck passed"
+else
+    echo "⚠ cppcheck not found, skipping static analysis"
+fi
+
+echo ""
+echo "========================================"
+echo "✓ Pre-commit checks passed!"
+echo "========================================"
+exit 0

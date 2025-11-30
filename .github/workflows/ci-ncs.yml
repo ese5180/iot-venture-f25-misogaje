@@ -1,0 +1,144 @@
+# =============================================================================
+# GitHub Actions CI Pipeline - nRF Connect SDK Version
+# =============================================================================
+# Use this workflow if your project is based on nRF Connect SDK (NCS)
+# instead of vanilla Zephyr RTOS.
+#
+# The main difference is the Docker image and west initialization.
+# =============================================================================
+
+name: CI Build & Test (NCS)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  # Nordic's nRF Connect SDK Docker image
+  NCS_IMAGE: ghcr.io/nrfconnect/sdk-nrf:main
+
+jobs:
+  # ===========================================================================
+  # Job 1: Build and run unit tests on native_sim
+  # ===========================================================================
+  unit-tests:
+    name: Unit Tests (native_sim)
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nrfconnect/sdk-nrf:main
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build unit tests
+        working-directory: /workdir/nrf
+        run: |
+          # Copy project into NCS workspace
+          cp -r $GITHUB_WORKSPACE/tests /workdir/project_tests
+          
+          west build -p always \
+            -b native_sim/native/64 \
+            /workdir/project_tests/unit_test \
+            --pristine \
+            -- -DCONFIG_ZTEST=y
+
+      - name: Run unit tests
+        working-directory: /workdir/nrf
+        run: |
+          west build -t run /workdir/project_tests/unit_test 2>&1 | tee $GITHUB_WORKSPACE/test_output.log
+          
+          if grep -q "FAIL" $GITHUB_WORKSPACE/test_output.log; then
+            echo "::error::Unit tests failed"
+            exit 1
+          fi
+
+      - name: Upload test logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-logs-ncs
+          path: test_output.log
+          retention-days: 30
+
+  # ===========================================================================
+  # Job 2: Build misogate for nRF7002DK (NCS)
+  # ===========================================================================
+  build-misogate:
+    name: Build misogate (nRF7002DK)
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nrfconnect/sdk-nrf:main
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build misogate
+        working-directory: /workdir/nrf
+        run: |
+          cp -r $GITHUB_WORKSPACE/misogate /workdir/misogate
+          
+          west build -p always \
+            -b nrf7002dk/nrf5340/cpuapp \
+            /workdir/misogate \
+            --pristine
+
+      - name: Copy artifacts
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/artifacts
+          cp /workdir/nrf/build/zephyr/zephyr.hex $GITHUB_WORKSPACE/artifacts/ || true
+          cp /workdir/nrf/build/zephyr/zephyr.bin $GITHUB_WORKSPACE/artifacts/ || true
+          cp /workdir/nrf/build/zephyr/zephyr.elf $GITHUB_WORKSPACE/artifacts/ || true
+
+      - name: Upload misogate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: misogate-firmware-ncs
+          path: artifacts/
+          retention-days: 30
+
+  # ===========================================================================
+  # Job 3: Build misonode for nRF7002DK (NCS)
+  # ===========================================================================
+  build-misonode:
+    name: Build misonode (nRF7002DK)
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nrfconnect/sdk-nrf:main
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build misonode
+        working-directory: /workdir/nrf
+        run: |
+          cp -r $GITHUB_WORKSPACE/misonode /workdir/misonode
+          
+          west build -p always \
+            -b nrf7002dk/nrf5340/cpuapp \
+            /workdir/misonode \
+            --pristine
+
+      - name: Copy artifacts
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/artifacts
+          cp /workdir/nrf/build/zephyr/zephyr.hex $GITHUB_WORKSPACE/artifacts/ || true
+          cp /workdir/nrf/build/zephyr/zephyr.bin $GITHUB_WORKSPACE/artifacts/ || true
+
+      - name: Upload misonode artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: misonode-firmware-ncs
+          path: artifacts/
+          retention-days: 30
