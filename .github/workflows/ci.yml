@@ -13,10 +13,10 @@ on:
 
 jobs:
   # ===========================================================================
-  # Job 1: Build and run unit tests on native_sim
+  # Job 1: Build and run MMC5983MA unit tests
   # ===========================================================================
-  unit-tests:
-    name: Unit Tests (native_sim)
+  unit-tests-mmc5983ma:
+    name: Unit Tests - MMC5983MA (native_sim)
     runs-on: ubuntu-22.04
     
     steps:
@@ -27,14 +27,11 @@ jobs:
 
       - name: Free disk space
         run: |
-          echo "Disk space before cleanup:"
-          df -h
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force
-          echo "Disk space after cleanup:"
           df -h
 
       - name: Install dependencies
@@ -69,42 +66,55 @@ jobs:
           pip3 install -r ncs/zephyr/scripts/requirements.txt
           pip3 install -r ncs/nrf/scripts/requirements.txt || true
 
-      - name: Build unit tests
+      - name: Build MMC5983MA unit tests
         env:
           ZEPHYR_SDK_INSTALL_DIR: ~/zephyr-sdk-0.16.8
         working-directory: ncs
         run: |
           west build -p always \
             -b native_sim/native/64 \
-            project/tests/unit_test \
-            --pristine \
-            -- -DCONFIG_ZTEST=y
+            project/tests/mmc5983ma_test \
+            --pristine
 
-      - name: Run unit tests
+      - name: Run MMC5983MA unit tests
         working-directory: ncs
         run: |
-          west build -t run 2>&1 | tee $GITHUB_WORKSPACE/test_output.log
+          # For native_sim, run the executable directly
+          # Find the zephyr.exe executable
+          ZEPHYR_EXE=$(find build -name "zephyr.exe" -type f | head -1)
           
-          if grep -q "FAIL" $GITHUB_WORKSPACE/test_output.log; then
-            echo "::error::Unit tests failed"
+          if [ -z "$ZEPHYR_EXE" ]; then
+            echo "::error::Could not find zephyr.exe"
+            find build -name "*.exe" -type f || true
             exit 1
           fi
           
-          echo "✓ All unit tests passed"
+          echo "Running: $ZEPHYR_EXE"
+          $ZEPHYR_EXE 2>&1 | tee $GITHUB_WORKSPACE/mmc5983ma_test_output.log
+          
+          # Check for test failures
+          if grep -q "FAIL" $GITHUB_WORKSPACE/mmc5983ma_test_output.log; then
+            echo "::error::MMC5983MA unit tests failed"
+            exit 1
+          fi
+          
+          if grep -q "PASS" $GITHUB_WORKSPACE/mmc5983ma_test_output.log; then
+            echo "✓ MMC5983MA unit tests passed"
+          fi
 
       - name: Upload test logs
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: unit-test-logs
-          path: test_output.log
+          name: mmc5983ma-test-logs
+          path: mmc5983ma_test_output.log
           retention-days: 30
 
   # ===========================================================================
-  # Job 2: Build misogate for nRF7002DK
+  # Job 2: Build magsens for nRF7002DK
   # ===========================================================================
-  build-misogate:
-    name: Build misogate (nRF7002DK)
+  build-magsens:
+    name: Build magsens (nRF7002DK)
     runs-on: ubuntu-22.04
     
     steps:
@@ -154,42 +164,30 @@ jobs:
           pip3 install -r ncs/zephyr/scripts/requirements.txt
           pip3 install -r ncs/nrf/scripts/requirements.txt || true
 
-      - name: Build misogate
+      - name: Build magsens
         env:
           ZEPHYR_SDK_INSTALL_DIR: ~/zephyr-sdk-0.16.8
         working-directory: ncs
         run: |
           west build -p always \
             -b nrf7002dk/nrf5340/cpuapp \
-            project/misogate \
+            project/magsens \
             --pristine
 
-      - name: Find build outputs
-        if: always()
-        run: |
-          echo "=== Looking for .hex files ==="
-          find ncs/build -name "*.hex" 2>/dev/null || echo "No .hex files found"
-          echo ""
-          echo "=== Looking for zephyr.elf files ==="
-          find ncs/build -name "zephyr.elf" 2>/dev/null || echo "No zephyr.elf found"
-          echo ""
-          echo "=== Build directory structure ==="
-          ls -laR ncs/build/ 2>/dev/null | head -100 || echo "Build dir not found"
-
-      - name: Copy artifacts to workspace
+      - name: Find and copy artifacts
         if: always()
         run: |
           mkdir -p artifacts
           find ncs/build -name "*.hex" -exec cp {} artifacts/ \; 2>/dev/null || true
           find ncs/build -name "*.bin" -exec cp {} artifacts/ \; 2>/dev/null || true
           find ncs/build -name "zephyr.elf" -exec cp {} artifacts/ \; 2>/dev/null || true
-          ls -la artifacts/ || echo "No artifacts found"
+          ls -la artifacts/
 
-      - name: Upload misogate artifacts
+      - name: Upload magsens artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: misogate-firmware
+          name: magsens-firmware
           path: artifacts/
           if-no-files-found: warn
           retention-days: 30
@@ -258,26 +256,14 @@ jobs:
             project/misonode \
             --pristine
 
-      - name: Find build outputs
-        if: always()
-        run: |
-          echo "=== Looking for .hex files ==="
-          find ncs/build -name "*.hex" 2>/dev/null || echo "No .hex files found"
-          echo ""
-          echo "=== Looking for zephyr.elf files ==="
-          find ncs/build -name "zephyr.elf" 2>/dev/null || echo "No zephyr.elf found"
-          echo ""
-          echo "=== Build directory structure ==="
-          ls -laR ncs/build/ 2>/dev/null | head -100 || echo "Build dir not found"
-
-      - name: Copy artifacts to workspace
+      - name: Find and copy artifacts
         if: always()
         run: |
           mkdir -p artifacts
           find ncs/build -name "*.hex" -exec cp {} artifacts/ \; 2>/dev/null || true
           find ncs/build -name "*.bin" -exec cp {} artifacts/ \; 2>/dev/null || true
           find ncs/build -name "zephyr.elf" -exec cp {} artifacts/ \; 2>/dev/null || true
-          ls -la artifacts/ || echo "No artifacts found"
+          ls -la artifacts/
 
       - name: Upload misonode artifacts
         uses: actions/upload-artifact@v4
@@ -307,7 +293,7 @@ jobs:
       - name: Run clang-format check
         run: |
           echo "Checking code formatting..."
-          find misogate misonode tests -name '*.c' -o -name '*.h' 2>/dev/null | head -50 | while read file; do
+          find misonode magsens tests -name '*.c' -o -name '*.h' 2>/dev/null | head -50 | while read file; do
             if [ -f "$file" ]; then
               clang-format --style=file --dry-run --Werror "$file" 2>/dev/null || \
                 echo "::warning file=$file::File needs formatting"
@@ -322,7 +308,7 @@ jobs:
                    --suppress=missingIncludeSystem \
                    --suppress=unusedFunction \
                    --quiet \
-                   misogate/src misonode/src 2>&1 | tee cppcheck_report.txt || true
+                   misonode/src magsens/src 2>&1 | tee cppcheck_report.txt || true
           echo "✓ Static analysis complete"
 
       - name: Upload analysis reports
@@ -339,7 +325,7 @@ jobs:
   ci-summary:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [unit-tests, build-misogate, build-misonode, static-analysis]
+    needs: [unit-tests-mmc5983ma, build-magsens, build-misonode, static-analysis]
     if: always()
     
     steps:
@@ -348,8 +334,8 @@ jobs:
           echo "========================================"
           echo "CI Pipeline Summary"
           echo "========================================"
-          echo "Unit Tests:      ${{ needs.unit-tests.result }}"
-          echo "Build misogate:  ${{ needs.build-misogate.result }}"
+          echo "MMC5983MA Tests: ${{ needs.unit-tests-mmc5983ma.result }}"
+          echo "Build magsens:   ${{ needs.build-magsens.result }}"
           echo "Build misonode:  ${{ needs.build-misonode.result }}"
           echo "Static Analysis: ${{ needs.static-analysis.result }}"
           echo "========================================"

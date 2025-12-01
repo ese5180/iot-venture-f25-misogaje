@@ -156,6 +156,9 @@ SRS-04: Gateway shall publish telemetry via MQTT in JSON format required  (chain
 
 { “team”: <string-formatted team name>, “timestamp”: <UNIX timestamp>, “mining”: <boolean mining flag>, “chainage”: <float-formatted chainage in m>, “easting”: <float-formatted easting in m>, “northing”: <float-formatted northing in m>, “elevation”: <float-formatted elevation in m>, “roll”: <float-formatted roll in radians>, “pitch”: <float-formatted pitch in radians>, “heading”: <float-formatted heading in radians>, “extra”: { “optionalSensor”: <data>, “otherOptionalSensor”: <data>, }
 
+### CI Pipeline
+
+Workflow runs on push to main and sophia/ci branches (for testing). Build artifacts and logs can be found in `ci-pipeline-artifacts` folder.
 ## Financial Modelling and Power Budget
 
 See link here: https://docs.google.com/spreadsheets/d/1R-X6t2DPyomnM5r9wQLkjpDll6tv00gY6B8JL_NzjFE/edit?gid=1607148272#gid=1607148272
