@@ -1,3 +1,63 @@
--- west build: running target run
-ninja: error: unknown target 'run', did you mean 'all'?
-FATAL ERROR: command exited with status 1: /usr/local/bin/cmake --build /home/runner/work/iot-venture-f25-misogaje/iot-venture-f25-misogaje/ncs/build --target run
+*** Booting nRF Connect SDK v2.9.0-7787b2649840 ***
+*** Using Zephyr OS v3.7.99-1f8f3dc29142 ***
+Running TESTSUITE mmc5983ma_suite
+===================================================================
+MMC5983MA Driver Unit Tests
+START - test_calculate_magnitude
+ PASS - test_calculate_magnitude in 0.000 seconds
+===================================================================
+START - test_convert_raw_bytes_max_negative
+ PASS - test_convert_raw_bytes_max_negative in 0.000 seconds
+===================================================================
+START - test_convert_raw_bytes_max_positive
+ PASS - test_convert_raw_bytes_max_positive in 0.000 seconds
+===================================================================
+START - test_convert_raw_bytes_mixed_values
+ PASS - test_convert_raw_bytes_mixed_values in 0.000 seconds
+===================================================================
+START - test_convert_raw_bytes_zero_field
+ PASS - test_convert_raw_bytes_zero_field in 0.000 seconds
+===================================================================
+START - test_convert_to_gauss_magnitude_3d
+ PASS - test_convert_to_gauss_magnitude_3d in 0.000 seconds
+===================================================================
+START - test_convert_to_gauss_negative
+ PASS - test_convert_to_gauss_negative in 0.000 seconds
+===================================================================
+START - test_convert_to_gauss_one_gauss
+ PASS - test_convert_to_gauss_one_gauss in 0.000 seconds
+===================================================================
+START - test_convert_to_gauss_zero
+ PASS - test_convert_to_gauss_zero in 0.000 seconds
+===================================================================
+START - test_earth_field_range
+ PASS - test_earth_field_range in 0.000 seconds
+===================================================================
+START - test_validate_product_id_invalid
+ PASS - test_validate_product_id_invalid in 0.000 seconds
+===================================================================
+START - test_validate_product_id_valid
+ PASS - test_validate_product_id_valid in 0.000 seconds
+===================================================================
+TESTSUITE mmc5983ma_suite succeeded
+
+------ TESTSUITE SUMMARY START ------
+
+SUITE PASS - 100.00% [mmc5983ma_suite]: pass = 12, fail = 0, skip = 0, total = 12 duration = 0.000 seconds
+ - PASS - [mmc5983ma_suite.test_calculate_magnitude] duration = 0.000 seconds
+ - PASS - [mmc5983ma_suite.test_convert_raw_bytes_max_negative] duration = 0.000 seconds
+ - PASS - [mmc5983ma_suite.test_convert_raw_bytes_max_positive] duration = 0.000 seconds
+ - PASS - [mmc5983ma_suite.test_convert_raw_bytes_mixed_values] duration = 0.000 seconds
+ - PASS - [mmc5983ma_suite.test_convert_raw_bytes_zero_field] duration = 0.000 seconds
+ - PASS - [mmc5983ma_suite.test_convert_to_gauss_magnitude_3d] duration = 0.000 seconds
+ - PASS - [mmc5983ma_suite.test_convert_to_gauss_negative] duration = 0.000 seconds
+ - PASS - [mmc5983ma_suite.test_convert_to_gauss_one_gauss] duration = 0.000 seconds
+ - PASS - [mmc5983ma_suite.test_convert_to_gauss_zero] duration = 0.000 seconds
+ - PASS - [mmc5983ma_suite.test_earth_field_range] duration = 0.000 seconds
+ - PASS - [mmc5983ma_suite.test_validate_product_id_invalid] duration = 0.000 seconds
+ - PASS - [mmc5983ma_suite.test_validate_product_id_valid] duration = 0.000 seconds
+
+------ TESTSUITE SUMMARY END ------
+
+===================================================================
+PROJECT EXECUTION SUCCESSFUL
