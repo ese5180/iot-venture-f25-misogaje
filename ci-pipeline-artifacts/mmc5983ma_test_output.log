@@ -1,0 +1,3 @@
+-- west build: running target run
+ninja: error: unknown target 'run', did you mean 'all'?
+FATAL ERROR: command exited with status 1: /usr/local/bin/cmake --build /home/runner/work/iot-venture-f25-misogaje/iot-venture-f25-misogaje/ncs/build --target run

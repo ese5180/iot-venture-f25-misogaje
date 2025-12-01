@@ -116,3 +116,7 @@ SRS-03: Gateway shall fuse ≥3 node readings into TBM position & heading using 
 SRS-04: Gateway shall publish telemetry via MQTT in JSON format required  (chainage, easting, northing, elevation, heading:
 
 { “team”: <string-formatted team name>, “timestamp”: <UNIX timestamp>, “mining”: <boolean mining flag>, “chainage”: <float-formatted chainage in m>, “easting”: <float-formatted easting in m>, “northing”: <float-formatted northing in m>, “elevation”: <float-formatted elevation in m>, “roll”: <float-formatted roll in radians>, “pitch”: <float-formatted pitch in radians>, “heading”: <float-formatted heading in radians>, “extra”: { “optionalSensor”: <data>, “otherOptionalSensor”: <data>, }
+
+### CI Pipeline
+
+Workflow runs on push to main and sophia/ci branches (for testing). Build artifacts and logs can be found in `ci-pipeline-artifacts` folder.

@@ -79,7 +79,18 @@ jobs:
       - name: Run MMC5983MA unit tests
         working-directory: ncs
         run: |
-          west build -t run 2>&1 | tee $GITHUB_WORKSPACE/mmc5983ma_test_output.log
+          # For native_sim, run the executable directly
+          # Find the zephyr.exe executable
+          ZEPHYR_EXE=$(find build -name "zephyr.exe" -type f | head -1)
+          
+          if [ -z "$ZEPHYR_EXE" ]; then
+            echo "::error::Could not find zephyr.exe"
+            find build -name "*.exe" -type f || true
+            exit 1
+          fi
+          
+          echo "Running: $ZEPHYR_EXE"
+          $ZEPHYR_EXE 2>&1 | tee $GITHUB_WORKSPACE/mmc5983ma_test_output.log
           
           # Check for test failures
           if grep -q "FAIL" $GITHUB_WORKSPACE/mmc5983ma_test_output.log; then
