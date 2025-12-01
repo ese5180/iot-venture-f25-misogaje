@@ -1,112 +1,250 @@
-import Image from "next/image";
+"use client";
+
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { TunnelBoringMachine } from "./components/TunnelBoringMachine";
+import { useMqtt } from "./hooks/useMqtt";
+import { useAuth } from "./contexts/AuthContext";
 
 export default function Home() {
+  const router = useRouter();
+  const { user, signOut, loading: authLoading } = useAuth();
+  const [position, setPosition] = useState(0);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+
+  // Load configuration from environment variables
+  const mqttUrl =
+    process.env.NEXT_PUBLIC_MQTT_URL ||
+    "c1412829227647ae9f57545fe534a511.s1.eu.hivemq.cloud";
+  const mqttPort = process.env.NEXT_PUBLIC_MQTT_PORT
+    ? parseInt(process.env.NEXT_PUBLIC_MQTT_PORT)
+    : 8883;
+  const mqttUsername = process.env.NEXT_PUBLIC_MQTT_USERNAME || "misogate";
+  const mqttPassword = process.env.NEXT_PUBLIC_MQTT_PASSWORD || "";
+  const topic = process.env.NEXT_PUBLIC_MQTT_TOPIC || "misogate/pub";
+
+  // MQTT connection - only connect when user is logged in
+  const mqttConnection = useMqtt(
+    user
+      ? {
+          url: mqttUrl,
+          port: mqttPort,
+          username: mqttUsername,
+          password: mqttPassword,
+          protocol: "wss",
+        }
+      : undefined,
+    user ? [topic] : [],
+  );
+
+  const { isConnected, messages, error } = mqttConnection;
+
+  // Persist position - no auto-reset
+
+  // Process incoming MQTT messages
+  useEffect(() => {
+    if (messages.length > 0) {
+      const latestMessage = messages[messages.length - 1];
+      console.log("Received message:", latestMessage);
+
+      try {
+        // Handle different message formats
+        let newPosition = position;
+
+        if (typeof latestMessage.payload === "object") {
+          // Try common field names for position
+          if ("position" in latestMessage.payload) {
+            newPosition = parseInt(latestMessage.payload.position);
+          } else if ("pos" in latestMessage.payload) {
+            newPosition = parseInt(latestMessage.payload.pos);
+          } else if ("value" in latestMessage.payload) {
+            newPosition = parseInt(latestMessage.payload.value);
+          }
+        } else if (typeof latestMessage.payload === "number") {
+          newPosition = latestMessage.payload;
+        } else if (typeof latestMessage.payload === "string") {
+          const parsed = parseInt(latestMessage.payload);
+          if (!isNaN(parsed)) {
+            newPosition = parsed;
+          }
+        }
+
+        // Clamp position to 0-255 range
+        newPosition = Math.max(0, Math.min(255, newPosition));
+
+        if (newPosition !== position) {
+          setPosition(newPosition);
+          setLastUpdate(new Date());
+        }
+      } catch (err) {
+        console.error("Error parsing message:", err);
+      }
+    }
+  }, [messages]);
+
+  const handleLogout = async () => {
+    await signOut();
+    router.push("/login");
+  };
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+    <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-8">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-center flex-1">
+              <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
+                MagNav Tunnel Monitor
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400">
+                Real-time micro tunnel boring machine position tracking
+              </p>
+            </div>
+            <div className="flex items-center gap-4">
+              {authLoading ? (
+                <div className="text-gray-500 dark:text-gray-400">
+                  Loading...
+                </div>
+              ) : user ? (
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {user.username}
+                    </div>
+                    {user.email && (
+                      <div className="text-xs text-gray-600 dark:text-gray-400">
+                        {user.email}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm font-semibold"
+                  >
+                    Logout
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => router.push("/login")}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-semibold"
+                  >
+                    Login
+                  </button>
+                  <button
+                    onClick={() => router.push("/signup")}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-semibold"
+                  >
+                    Sign Up
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+        {/* Login Prompt or Content */}
+        {authLoading ? (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-12 text-center">
+            <div className="text-gray-600 dark:text-gray-400">Loading...</div>
+          </div>
+        ) : !user ? (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-12 text-center">
+            <div className="max-w-md mx-auto">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+                Authentication Required
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-8">
+                Please log in to access the tunnel monitoring system
+              </p>
+              <div className="flex gap-4 justify-center">
+                <button
+                  onClick={() => router.push("/login")}
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-semibold"
+                >
+                  Log In
+                </button>
+                <button
+                  onClick={() => router.push("/signup")}
+                  className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-semibold"
+                >
+                  Sign Up
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Connection Status */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-8">
+              <div className="flex items-center space-x-4">
+                <div
+                  className={`w-4 h-4 rounded-full ${
+                    isConnected ? "bg-green-500 animate-pulse" : "bg-yellow-500"
+                  }`}
+                />
+                <div>
+                  <div className="font-semibold text-gray-900 dark:text-white">
+                    {isConnected
+                      ? "Connected to MQTT Broker"
+                      : "Connecting to MQTT Broker..."}
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    {mqttUrl}:{mqttPort} - {topic}
+                  </div>
+                  {lastUpdate && (
+                    <div className="text-xs text-gray-500 dark:text-gray-500">
+                      Last update: {lastUpdate.toLocaleTimeString()}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {error && (
+                <div className="mt-4 p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200 rounded-lg text-sm">
+                  Error: {error}
+                </div>
+              )}
+            </div>
 
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
+            {/* TBM Visualization */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
+              <TunnelBoringMachine position={position} />
+            </div>
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
+            {/* Message Log */}
+            <div className="mt-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+              <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">
+                Recent Messages ({messages.length})
+              </h3>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {messages
+                  .slice(-10)
+                  .reverse()
+                  .map((msg, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 bg-gray-50 dark:bg-gray-700 rounded text-sm font-mono"
+                    >
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                        {new Date(msg.timestamp).toLocaleTimeString()} -{" "}
+                        {msg.topic}
+                      </div>
+                      <div className="text-gray-900 dark:text-gray-100">
+                        {JSON.stringify(msg.payload, null, 2)}
+                      </div>
+                    </div>
+                  ))}
+                {messages.length === 0 && (
+                  <div className="text-gray-500 dark:text-gray-400 text-center py-8">
+                    Waiting for messages...
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </main>
   );
