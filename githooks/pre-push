@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Pre-push hook: Builds project and runs Ztests in Zephyr Docker container
+# Install: cp githooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+# =============================================================================
+set -euo pipefail
+trap 'echo ""; echo "✗ Pre-push tests FAILED."; exit 1' ERR
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+IMAGE="ghcr.io/zephyrproject-rtos/zephyr-build:main"
+
+# Paths relative to repo root (adjust if your tests are elsewhere)
+TEST_APP_DIR="tests/unit_test"
+MISOGATE_DIR="misogate"
+MISONODE_DIR="misonode"
+
+echo "========================================"
+echo "Pre-push: Running CI tests in Docker"
+echo "========================================"
+echo "  Repo:  $REPO_ROOT"
+echo "  Image: $IMAGE"
+echo ""
+
+# -----------------------------------------------------------------------------
+# Pull Docker image if not present
+# -----------------------------------------------------------------------------
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    echo "→ Pulling Zephyr Docker image..."
+    docker pull "$IMAGE" --quiet
+else
+    echo "→ Using existing local Docker image"
+fi
+
+# -----------------------------------------------------------------------------
+# Run build + tests inside container
+# -----------------------------------------------------------------------------
+echo ""
+echo "→ Starting Docker container..."
+docker run --rm \
+    -v "$REPO_ROOT":/workdir \
+    -w /workdir \
+    "$IMAGE" bash -lc '
+        set -euo pipefail
+        
+        echo ""
+        echo "========================================"
+        echo "Docker container environment"
+        echo "========================================"
+        echo "West version: $(west --version)"
+        echo "Zephyr SDK:   ${ZEPHYR_SDK_INSTALL_DIR:-not set}"
+        echo ""
+        
+        # Check for required directories
+        echo "→ Checking workspace structure..."
+        ls -la /workdir
+        
+        # -----------------------------------------------------------------
+        # 1. Build and run unit tests on native_sim
+        # -----------------------------------------------------------------
+        if [ -d "/workdir/'"$TEST_APP_DIR"'" ]; then
+            echo ""
+            echo "========================================"
+            echo "1. Building unit tests (native_sim/native/64)"
+            echo "========================================"
+            west build -p always \
+                -b native_sim/native/64 \
+                /workdir/'"$TEST_APP_DIR"' \
+                --pristine \
+                -- -DCONFIG_ZTEST=y
+            
+            echo ""
+            echo "→ Running unit tests..."
+            west build -t run /workdir/'"$TEST_APP_DIR"'
+            echo "✓ Unit tests passed"
+        else
+            echo "⚠ Test directory '"$TEST_APP_DIR"' not found, skipping unit tests"
+        fi
+        
+        # -----------------------------------------------------------------
+        # 2. Build misogate for nRF7002DK
+        # -----------------------------------------------------------------
+        if [ -d "/workdir/'"$MISOGATE_DIR"'" ]; then
+            echo ""
+            echo "========================================"
+            echo "2. Building misogate (nrf7002dk/nrf5340/cpuapp)"
+            echo "========================================"
+            west build -p always \
+                -b nrf7002dk/nrf5340/cpuapp \
+                /workdir/'"$MISOGATE_DIR"' \
+                --pristine
+            echo "✓ misogate build succeeded"
+        else
+            echo "⚠ misogate directory not found"
+        fi
+        
+        # -----------------------------------------------------------------
+        # 3. Build misonode for nRF7002DK
+        # -----------------------------------------------------------------
+        if [ -d "/workdir/'"$MISONODE_DIR"'" ]; then
+            echo ""
+            echo "========================================"
+            echo "3. Building misonode (nrf7002dk/nrf5340/cpuapp)"
+            echo "========================================"
+            west build -p always \
+                -b nrf7002dk/nrf5340/cpuapp \
+                /workdir/'"$MISONODE_DIR"' \
+                --pristine
+            echo "✓ misonode build succeeded"
+        else
+            echo "⚠ misonode directory not found"
+        fi
+        
+        echo ""
+        echo "========================================"
+        echo "✓ All pre-push checks passed!"
+        echo "========================================"
+    '
+
+echo ""
+echo "========================================"
+echo "✓ Pre-push tests PASSED - safe to push!"
+echo "========================================"
+exit 0
