@@ -9,7 +9,7 @@
 
 #include <zephyr/ztest.h>
 
-/* 
+/*
  * Test suites are automatically registered using ZTEST_SUITE macro
  * in their respective test_*.c files. This main.c just needs to
  * exist for the build system.

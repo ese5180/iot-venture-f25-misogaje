@@ -1,7 +1,6 @@
+
 # =============================================================================
-# GitHub Actions CI Pipeline for Zephyr/Nordic nRF7002DK Project
-# =============================================================================
-# Triggers: Push to main, Pull requests to main
+# Triggers: Push to main and sophia/ci branches, Pull requests to main
 # Actions:
 #   1. Builds unit tests and runs on native_sim
 #   2. Builds misogate for nrf7002dk
@@ -13,19 +12,15 @@ name: CI Build & Test
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, sophia/ci]
   pull_request:
     branches: [main, master]
   workflow_dispatch:  # Allow manual trigger
 
 env:
-  # Use the official Zephyr CI Docker image
   ZEPHYR_IMAGE: ghcr.io/zephyrproject-rtos/zephyr-build:main
 
 jobs:
-  # ===========================================================================
-  # Job 1: Build and run unit tests on native_sim
-  # ===========================================================================
   unit-tests:
     name: Unit Tests (native_sim)
     runs-on: ubuntu-latest
@@ -75,9 +70,6 @@ jobs:
             build/zephyr/zephyr.log
           retention-days: 30
 
-  # ===========================================================================
-  # Job 2: Build misogate for nRF7002DK
-  # ===========================================================================
   build-misogate:
     name: Build misogate (nRF7002DK)
     runs-on: ubuntu-latest
@@ -114,9 +106,6 @@ jobs:
             build/zephyr/zephyr.log
           retention-days: 30
 
-  # ===========================================================================
-  # Job 3: Build misonode for nRF7002DK
-  # ===========================================================================
   build-misonode:
     name: Build misonode (nRF7002DK)
     runs-on: ubuntu-latest
@@ -153,9 +142,6 @@ jobs:
             build/zephyr/zephyr.log
           retention-days: 30
 
-  # ===========================================================================
-  # Job 4: Static Analysis (runs in parallel)
-  # ===========================================================================
   static-analysis:
     name: Static Analysis
     runs-on: ubuntu-latest
@@ -208,9 +194,6 @@ jobs:
             cppcheck_report.txt
           retention-days: 30
 
-  # ===========================================================================
-  # Summary job - runs after all others complete
-  # ===========================================================================
   ci-summary:
     name: CI Summary
     runs-on: ubuntu-latest
