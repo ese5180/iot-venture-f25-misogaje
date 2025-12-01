@@ -1,3 +1,6 @@
+# =============================================================================
+# GitHub Actions CI Pipeline for nRF Connect SDK Project
+# =============================================================================
 
 name: CI Build & Test
 
@@ -48,12 +51,9 @@ jobs:
 
       - name: Setup nRF Connect SDK
         run: |
-          # Initialize west with nRF Connect SDK
           west init -m https://github.com/nrfconnect/sdk-nrf --mr v2.9.0 ncs
           cd ncs
           west update --narrow --fetch-opt=--depth=1
-          
-          # Link our project into the workspace
           ln -s $GITHUB_WORKSPACE project
 
       - name: Install Zephyr SDK (native tools)
@@ -97,7 +97,7 @@ jobs:
         if: always()
         with:
           name: unit-test-logs
-          path: ${{ github.workspace }}/test_output.log
+          path: test_output.log
           retention-days: 30
 
   # ===========================================================================
@@ -164,14 +164,34 @@ jobs:
             project/misogate \
             --pristine
 
+      - name: Find build outputs
+        if: always()
+        run: |
+          echo "=== Looking for .hex files ==="
+          find ncs/build -name "*.hex" 2>/dev/null || echo "No .hex files found"
+          echo ""
+          echo "=== Looking for zephyr.elf files ==="
+          find ncs/build -name "zephyr.elf" 2>/dev/null || echo "No zephyr.elf found"
+          echo ""
+          echo "=== Build directory structure ==="
+          ls -laR ncs/build/ 2>/dev/null | head -100 || echo "Build dir not found"
+
+      - name: Copy artifacts to workspace
+        if: always()
+        run: |
+          mkdir -p artifacts
+          find ncs/build -name "*.hex" -exec cp {} artifacts/ \; 2>/dev/null || true
+          find ncs/build -name "*.bin" -exec cp {} artifacts/ \; 2>/dev/null || true
+          find ncs/build -name "zephyr.elf" -exec cp {} artifacts/ \; 2>/dev/null || true
+          ls -la artifacts/ || echo "No artifacts found"
+
       - name: Upload misogate artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: misogate-firmware
-          path: |
-            ${{ github.workspace }}/ncs/build/zephyr/zephyr.hex
-            ${{ github.workspace }}/ncs/build/zephyr/zephyr.bin
-            ${{ github.workspace }}/ncs/build/zephyr/zephyr.elf
+          path: artifacts/
+          if-no-files-found: warn
           retention-days: 30
 
   # ===========================================================================
@@ -238,14 +258,34 @@ jobs:
             project/misonode \
             --pristine
 
+      - name: Find build outputs
+        if: always()
+        run: |
+          echo "=== Looking for .hex files ==="
+          find ncs/build -name "*.hex" 2>/dev/null || echo "No .hex files found"
+          echo ""
+          echo "=== Looking for zephyr.elf files ==="
+          find ncs/build -name "zephyr.elf" 2>/dev/null || echo "No zephyr.elf found"
+          echo ""
+          echo "=== Build directory structure ==="
+          ls -laR ncs/build/ 2>/dev/null | head -100 || echo "Build dir not found"
+
+      - name: Copy artifacts to workspace
+        if: always()
+        run: |
+          mkdir -p artifacts
+          find ncs/build -name "*.hex" -exec cp {} artifacts/ \; 2>/dev/null || true
+          find ncs/build -name "*.bin" -exec cp {} artifacts/ \; 2>/dev/null || true
+          find ncs/build -name "zephyr.elf" -exec cp {} artifacts/ \; 2>/dev/null || true
+          ls -la artifacts/ || echo "No artifacts found"
+
       - name: Upload misonode artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: misonode-firmware
-          path: |
-            ${{ github.workspace }}/ncs/build/zephyr/zephyr.hex
-            ${{ github.workspace }}/ncs/build/zephyr/zephyr.bin
-            ${{ github.workspace }}/ncs/build/zephyr/zephyr.elf
+          path: artifacts/
+          if-no-files-found: warn
           retention-days: 30
 
   # ===========================================================================
