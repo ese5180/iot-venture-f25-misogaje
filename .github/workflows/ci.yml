@@ -97,7 +97,7 @@ jobs:
         if: always()
         with:
           name: unit-test-logs
-          path: test_output.log
+          path: ${{ github.workspace }}/test_output.log
           retention-days: 30
 
   # ===========================================================================
@@ -169,9 +169,9 @@ jobs:
         with:
           name: misogate-firmware
           path: |
-            ncs/build/zephyr/zephyr.hex
-            ncs/build/zephyr/zephyr.bin
-            ncs/build/zephyr/zephyr.elf
+            ${{ github.workspace }}/ncs/build/zephyr/zephyr.hex
+            ${{ github.workspace }}/ncs/build/zephyr/zephyr.bin
+            ${{ github.workspace }}/ncs/build/zephyr/zephyr.elf
           retention-days: 30
 
   # ===========================================================================
@@ -243,9 +243,9 @@ jobs:
         with:
           name: misonode-firmware
           path: |
-            ncs/build/zephyr/zephyr.hex
-            ncs/build/zephyr/zephyr.bin
-            ncs/build/zephyr/zephyr.elf
+            ${{ github.workspace }}/ncs/build/zephyr/zephyr.hex
+            ${{ github.workspace }}/ncs/build/zephyr/zephyr.bin
+            ${{ github.workspace }}/ncs/build/zephyr/zephyr.elf
           retention-days: 30
 
   # ===========================================================================
