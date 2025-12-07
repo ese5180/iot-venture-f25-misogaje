@@ -14,6 +14,12 @@
 #include "json_payload.h"
 #include "mqtt/mqtt.h"
 
+//#include <memfault/ncs.h>
+//#include <memfault/core/data_export.h>
+
+//extern int memfault_ncs_http_upload(void);
+
+
 /* Register log module */
 LOG_MODULE_REGISTER(misogate, CONFIG_MISOGATE_LOG_LEVEL);
 
@@ -39,8 +45,25 @@ static K_WORK_DELAYABLE_DEFINE(connect_work, connect_work_fn);
 static K_WORK_DELAYABLE_DEFINE(position_update_work, position_update_work_fn);
 static K_WORK_DELAYABLE_DEFINE(mqtt_process_work, mqtt_process_work_fn);
 
+
 static int counter = 0;
 static bool mqtt_initialized = false;
+
+
+
+// void on_net_event_l4_connected(void)
+// {
+//     LOG_INF("Network connected. Will try MQTT + Memfault.");
+
+//     // 延迟连接 MQTT
+//     (void)k_work_reschedule(&connect_work, K_SECONDS(3));
+
+//     // 通知 Memfault 网络就绪
+//     memfault_platform_boot();  // ✅ 让它自动上传缓存数据
+// }
+
+
+
 
 static void button_handler(uint32_t button_state, uint32_t has_changed)
 {

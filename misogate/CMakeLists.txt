@@ -20,3 +20,6 @@ zephyr_include_directories(src/mqtt)
 
 # Make folder containing private key global so that it can be located by the MCUboot.
 zephyr_include_directories_ifdef(CONFIG_BOOT_SIGNATURE_KEY_FILE keys)
+
+
+
