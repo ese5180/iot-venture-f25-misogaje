@@ -2,364 +2,265 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/lora.h>
 #include <zephyr/logging/log.h>
+
+#include <math.h>
 #include <string.h>
 #include <stdint.h>
-#include <math.h>
-#include <stdio.h>
+#include <stdlib.h>
 
-#include "lora.h"
 #include "packet.h"
-#include "../mqtt/mqtt.h"
 
-LOG_MODULE_REGISTER(lora, CONFIG_MISOGATE_LOG_LEVEL);
+LOG_MODULE_REGISTER(misogate, LOG_LEVEL_INF);
 
-/* LoRa thread stack and priority */
-#define LORA_THREAD_STACK_SIZE 4096
-#define LORA_THREAD_PRIORITY   7
+/* ------------ LoRa config ------------ */
 
-/* Thread and stack definition */
-static K_THREAD_STACK_DEFINE(lora_thread_stack, LORA_THREAD_STACK_SIZE);
-static struct k_thread lora_thread_data;
-static k_tid_t lora_thread_id;
+#define LORA_NODE      DT_ALIAS(lora0)
+#define LORA_FREQ_HZ   915000000UL
 
-/* Per-node state at the gateway */
-static struct node_state g_nodes[MAX_NODES + 1];
+/* ------------ Multi-node + trilateration config ------------ */
 
-/* RX statistics */
-static uint32_t rx_ok = 0;
+#define MAX_NODES          3      /* we support node IDs 1..3 for now */
+#define BASELINE_WARMUP    20     /* packets per node before baseline is "locked in" */
 
-/* LoRa device handle */
-static const struct device *lora_dev;
+/* Fixed physical positions (in meters or arbitrary units) of each node.
+ * Adjust these to match your real geometry.
+ *
+ * Example:
+ *  Node 1 at (0,0)
+ *  Node 2 at (3,0)
+ *  Node 3 at (1.5,2.6)   --> makes a nice triangle
+ */
+struct NodePos {
+    float x;
+    float y;
+};
 
-/* Flag to indicate if receiver should be running */
-static bool receiver_running = false;
+static const struct NodePos node_pos[MAX_NODES + 1] = {
+    {0.0f, 0.0f},  /* index 0 unused */
+    {0.0f, 0.0f},  /* node 1 */
+    {0.0f, 100.0f},  /* node 2 */
+    {50.0f, 50.0f},  /* node 3 */
+};
 
-/* Compute |B| from components in m-uT using float math */
-static int32_t compute_absB_m_uT(int32_t x, int32_t y, int32_t z)
+/* Per-node running baseline + anomaly state */
+struct NodeState {
+    bool     seen;
+    bool     have_baseline;
+    uint32_t sample_count;
+    int64_t  sum_absB;       /* for initial average baseline */
+    int32_t  baseline_absB;  /* learned |B| baseline (m-uT) */
+
+    int32_t  last_absB;      /* last |B| */
+    int32_t  last_dAbsB;     /* last |B| - baseline (absolute) */
+};
+
+static struct NodeState g_nodes[MAX_NODES + 1];
+
+/* ------------ Helpers ------------ */
+
+/* magnitude of B vector, using X/Y/Z in m-uT units */
+static int32_t compute_absB(const struct sensor_frame *f)
 {
-    float fx = (float)x;
-    float fy = (float)y;
-    float fz = (float)z;
-    float mag = sqrtf(fx * fx + fy * fy + fz * fz);
-    if (mag > 2147483647.0f) {
-        mag = 2147483647.0f;
-    }
+    int64_t x = f->x_uT_milli;
+    int64_t y = f->y_uT_milli;
+    int64_t z = f->z_uT_milli;
+
+    long double xx = (long double)x * (long double)x;
+    long double yy = (long double)y * (long double)y;
+    long double zz = (long double)z * (long double)z;
+
+    long double mag = sqrtl(xx + yy + zz);
     return (int32_t)mag;
 }
 
-/* Update per-node baseline and anomaly for this frame */
-static void update_node_state(const struct sensor_frame *f, int32_t absB)
+/* Convert anomaly magnitude (|B|-baseline) to a weight.
+ * We use w = d^3 to roughly match 1/r^3 behavior of a dipole field.
+ */
+static float anomaly_weight(int32_t dAbs)
 {
-    uint8_t nid = f->node_id;
-    if (nid == 0 || nid > MAX_NODES) {
-        LOG_WRN("Ignoring frame from node_id=%u (out of range)", nid);
+    float d = fabsf((float)dAbs);
+    if (d < 1.0f) {
+        return 0.0f;
+    }
+    return d * d * d; /* α = 3 */
+}
+
+/* Weighted-centroid "trilateration" over all nodes with baselines.
+ * Returns true if we have enough info to estimate a 2D position.
+ */
+static bool estimate_position_2D(float *out_x, float *out_y)
+{
+    float sum_w = 0.0f;
+    float wx = 0.0f;
+    float wy = 0.0f;
+    int   active = 0;
+
+    for (int nid = 1; nid <= MAX_NODES; nid++) {
+        struct NodeState *ns = &g_nodes[nid];
+        if (!ns->have_baseline) {
+            continue;
+        }
+
+        float w = anomaly_weight(ns->last_dAbsB);
+        if (w <= 0.0f) {
+            continue;
+        }
+
+        sum_w += w;
+        wx += w * node_pos[nid].x;
+        wy += w * node_pos[nid].y;
+        active++;
+    }
+
+    /* Need at least 2 nodes contributing to say anything useful */
+    if (active < 2 || sum_w <= 0.0f) {
+        return false;
+    }
+
+    *out_x = wx / sum_w;
+    *out_y = wy / sum_w;
+    return true;
+}
+
+/* Process a successfully authenticated sensor frame from one node:
+ * - update baseline
+ * - compute anomaly
+ * - log detailed info
+ * - update state for trilateration
+ */
+static void process_frame(const struct sensor_frame *f,
+                          int16_t rssi,
+                          int16_t snr,
+                          int     pkt_len,
+                          uint32_t *rx_ok_ptr)
+{
+    if (f->node_id == 0 || f->node_id > MAX_NODES) {
+        LOG_WRN("Got frame from unexpected node_id=%u (MAX_NODES=%d)",
+                (unsigned)f->node_id, MAX_NODES);
         return;
     }
 
-    struct node_state *ns = &g_nodes[nid];
+    struct NodeState *ns = &g_nodes[f->node_id];
 
-    /* Learn baseline first N samples per node */
+    int32_t absB = compute_absB(f);
+    ns->seen = true;
+    ns->last_absB = absB;
+
     if (!ns->have_baseline) {
-        ns->baseline_sum_absB += absB;
-        ns->baseline_count++;
+        ns->sum_absB += absB;
+        ns->sample_count++;
 
-        if (ns->baseline_count >= BASELINE_SAMPLES) {
-            ns->baseline_absB =
-                (int32_t)(ns->baseline_sum_absB / (int32_t)ns->baseline_count);
+        if (ns->sample_count >= BASELINE_WARMUP) {
+            ns->baseline_absB = (int32_t)(ns->sum_absB / (int64_t)ns->sample_count);
             ns->have_baseline = true;
-            LOG_INF("Node %u baseline learned: |B| = %d m-uT",
-                    nid, ns->baseline_absB);
+            LOG_INF("Node %u baseline learned: |B| ≈ %d m-uT",
+                    (unsigned)f->node_id, ns->baseline_absB);
         }
+        ns->last_dAbsB = 0;
+    } else {
+        int32_t dAbs = abs(absB - ns->baseline_absB);
+        ns->last_dAbsB = dAbs;
     }
 
-    ns->last_absB = absB;
-    ns->last_seq  = f->tx_seq;
+    (*rx_ok_ptr)++;
+
+    int16_t t_abs = abs(f->temp_c_times10 % 10);
 
     if (ns->have_baseline) {
-        ns->last_dAbsB = absB - ns->baseline_absB;
+        LOG_INF("SECURE PKT rx_ok=%u node=%u tx_seq=%u "
+                "X=%d m-uT Y=%d m-uT Z=%d m-uT "
+                "|B|=%d m-uT d|B|=%d m-uT "
+                "T=%d.%d C RSSI=%d dBm SNR=%d dB len=%d",
+                (unsigned)(*rx_ok_ptr),
+                (unsigned)f->node_id,
+                (unsigned)f->tx_seq,
+                f->x_uT_milli,
+                f->y_uT_milli,
+                f->z_uT_milli,
+                absB,
+                ns->last_dAbsB,
+                f->temp_c_times10 / 10,
+                t_abs,
+                rssi,
+                snr,
+                pkt_len);
     } else {
-        ns->last_dAbsB = 0;
-    }
-}
-
-/*
- * Estimate relative TBM position using node 1 and 2.
- * Returns:
- *   -1 if no valid estimate yet
- *    0..100 otherwise (0=node1, 100=node2).
- */
-int lora_get_position_rel(void)
-{
-    struct node_state *n1 = &g_nodes[1];
-    struct node_state *n2 = &g_nodes[2];
-
-    if (!n1->have_baseline || !n2->have_baseline) {
-        return -1; /* learning baselines */
-    }
-
-    float d0 = fabsf((float)n1->last_dAbsB);
-    float d1 = fabsf((float)n2->last_dAbsB);
-    float sum = d0 + d1;
-
-    if (sum < POSITION_MIN_ANOM) {
-        /* Magnet too far / weak to give meaningful position */
-        return -1;
+        LOG_INF("SECURE PKT (learning baseline) rx_ok=%u node=%u tx_seq=%u "
+                "X=%d m-uT Y=%d m-uT Z=%d m-uT "
+                "|B|=%d m-uT "
+                "T=%d.%d C RSSI=%d dBm SNR=%d dB len=%d",
+                (unsigned)(*rx_ok_ptr),
+                (unsigned)f->node_id,
+                (unsigned)f->tx_seq,
+                f->x_uT_milli,
+                f->y_uT_milli,
+                f->z_uT_milli,
+                absB,
+                f->temp_c_times10 / 10,
+                t_abs,
+                rssi,
+                snr,
+                pkt_len);
     }
 
-    /* Barycentric between node1 and node2:
-     * ratio = d1 / (d0 + d1)
-     *  => 0 means all at node1, 1 means all at node2
+    /* After each valid frame, try to estimate 2D TBM position
+     * using *all* nodes that have a baseline.
      */
-    float ratio = d1 / sum;
-    if (ratio < 0.0f) ratio = 0.0f;
-    if (ratio > 1.0f) ratio = 1.0f;
-
-    int pos_rel = (int)(ratio * 100.0f + 0.5f); /* round to nearest int in [0,100] */
-    if (pos_rel < 0)   pos_rel = 0;
-    if (pos_rel > 100) pos_rel = 100;
-    return pos_rel;
-}
-
-uint32_t lora_get_rx_count(void)
-{
-    return rx_ok;
-}
-
-/* Track dropped packets for logging */
-static uint32_t mqtt_dropped_count = 0;
-static bool mqtt_was_connected = false;
-
-/* Publish sensor data to MQTT */
-static void publish_sensor_data(const struct sensor_frame *f, int32_t absB, 
-                                int32_t dAbsB, int16_t rssi, int16_t snr, int pos_rel)
-{
-    /* Check MQTT connection status first to avoid unnecessary work */
-    if (!mqtt_is_connected()) {
-        mqtt_dropped_count++;
-        /* Only log periodically to avoid spam */
-        if (mqtt_dropped_count == 1 || (mqtt_dropped_count % 10) == 0) {
-            LOG_WRN("MQTT not connected, dropped %u LoRa packet(s)", mqtt_dropped_count);
-        }
-        mqtt_was_connected = false;
-        return;
-    }
-
-    /* Log recovery if we were previously dropping packets */
-    if (!mqtt_was_connected && mqtt_dropped_count > 0) {
-        LOG_INF("MQTT reconnected, resuming publish (dropped %u packets)", mqtt_dropped_count);
-        mqtt_dropped_count = 0;
-    }
-    mqtt_was_connected = true;
-
-    char json_msg[512];
-    int len;
-
-    /* Format JSON with all sensor data */
-    if (pos_rel >= 0) {
-        len = snprintf(json_msg, sizeof(json_msg),
-            "{"
-            "\"node_id\":%u,"
-            "\"tx_seq\":%u,"
-            "\"x_uT_milli\":%d,"
-            "\"y_uT_milli\":%d,"
-            "\"z_uT_milli\":%d,"
-            "\"absB_milli\":%d,"
-            "\"dAbsB_milli\":%d,"
-            "\"temp_c\":%.1f,"
-            "\"rssi\":%d,"
-            "\"snr\":%d,"
-            "\"position_rel\":%d,"
-            "\"rx_count\":%u"
-            "}",
-            (unsigned)f->node_id,
-            (unsigned)f->tx_seq,
-            f->x_uT_milli,
-            f->y_uT_milli,
-            f->z_uT_milli,
-            absB,
-            dAbsB,
-            (float)f->temp_c_times10 / 10.0f,
-            rssi,
-            snr,
-            pos_rel,
-            rx_ok);
+    float pos_x, pos_y;
+    if (estimate_position_2D(&pos_x, &pos_y)) {
+        LOG_INF("POS_2D x=%.2f y=%.2f (triangle trilateration)", pos_x, pos_y);
     } else {
-        len = snprintf(json_msg, sizeof(json_msg),
-            "{"
-            "\"node_id\":%u,"
-            "\"tx_seq\":%u,"
-            "\"x_uT_milli\":%d,"
-            "\"y_uT_milli\":%d,"
-            "\"z_uT_milli\":%d,"
-            "\"absB_milli\":%d,"
-            "\"dAbsB_milli\":%d,"
-            "\"temp_c\":%.1f,"
-            "\"rssi\":%d,"
-            "\"snr\":%d,"
-            "\"position_rel\":null,"
-            "\"rx_count\":%u"
-            "}",
-            (unsigned)f->node_id,
-            (unsigned)f->tx_seq,
-            f->x_uT_milli,
-            f->y_uT_milli,
-            f->z_uT_milli,
-            absB,
-            dAbsB,
-            (float)f->temp_c_times10 / 10.0f,
-            rssi,
-            snr,
-            rx_ok);
-    }
-
-    if (len > 0 && len < (int)sizeof(json_msg)) {
-        int err = mqtt_publish_json(json_msg, len, MQTT_QOS_0_AT_MOST_ONCE);
-        if (err) {
-            LOG_WRN("Failed to publish LoRa data to MQTT: %d", err);
-            /* MQTT may have disconnected between our check and publish */
-            mqtt_was_connected = false;
-        } else {
-            LOG_DBG("Published LoRa data to MQTT");
-        }
+        LOG_INF("POS_2D unavailable (not enough baselines or anomalies)");
     }
 }
 
-/* LoRa receiver thread function */
-static void lora_receiver_thread(void *p1, void *p2, void *p3)
+/* ------------ Main ------------ */
+
+void main(void)
 {
-    ARG_UNUSED(p1);
-    ARG_UNUSED(p2);
-    ARG_UNUSED(p3);
-
-    LOG_INF("LoRa receiver thread started");
-
-    while (receiver_running) {
-        uint8_t buf[64];
-        int16_t rssi = 0, snr = 0;
-        int len = lora_recv(lora_dev, buf, sizeof(buf), K_SECONDS(10), &rssi, &snr);
-
-        if (len > 0) {
-            struct sensor_frame f;
-            if (packet_parse_secure_frame_encmac(buf, len, &f) == 0) {
-                rx_ok++;
-
-                /* Compute |B| and update per-node state */
-                int32_t absB = compute_absB_m_uT(
-                    f.x_uT_milli,
-                    f.y_uT_milli,
-                    f.z_uT_milli
-                );
-
-                update_node_state(&f, absB);
-
-                struct node_state *ns = (f.node_id <= MAX_NODES)
-                                        ? &g_nodes[f.node_id]
-                                        : NULL;
-
-                int32_t dAbsB = (ns && ns->have_baseline) ? ns->last_dAbsB : 0;
-
-                /* Pretty temperature */
-                int16_t t_abs = abs(f.temp_c_times10 % 10);
-
-                LOG_INF("SECURE PKT rx_ok=%u node=%u tx_seq=%u "
-                        "X=%d Y=%d Z=%d |B|=%d d|B|=%d m-uT "
-                        "T=%d.%d C RSSI=%d SNR=%d len=%d",
-                        (unsigned)rx_ok,
-                        (unsigned)f.node_id,
-                        (unsigned)f.tx_seq,
-                        f.x_uT_milli,
-                        f.y_uT_milli,
-                        f.z_uT_milli,
-                        absB,
-                        dAbsB,
-                        f.temp_c_times10 / 10,
-                        t_abs,
-                        rssi,
-                        snr,
-                        len);
-
-                /* Get relative position estimate */
-                int pos_rel = lora_get_position_rel();
-                if (pos_rel >= 0) {
-                    struct node_state *n1 = &g_nodes[1];
-                    struct node_state *n2 = &g_nodes[2];
-                    float d0 = fabsf((float)n1->last_dAbsB);
-                    float d1 = fabsf((float)n2->last_dAbsB);
-
-                    LOG_INF("POS_REL node1-2: %d (0=node1,100=node2) "
-                            "d0=%.0f d1=%.0f m-uT",
-                            pos_rel,
-                            (double)d0,
-                            (double)d1);
-                } else {
-                    LOG_INF("POS_REL: N/A (baselines not ready or anomalies too small)");
-                }
-
-                /* Publish to MQTT */
-                publish_sensor_data(&f, absB, dAbsB, rssi, snr, pos_rel);
-
-            } else {
-                LOG_WRN("SECURITY DROP len=%d RSSI=%d SNR=%d", len, rssi, snr);
-            }
-        } else if (len == 0) {
-            LOG_DBG("LoRa RX timeout, waiting...");
-        } else {
-            LOG_WRN("LoRa RX error: %d", len);
-        }
-    }
-
-    LOG_INF("LoRa receiver thread stopped");
-}
-
-int lora_receiver_init(void)
-{
-    lora_dev = DEVICE_DT_GET(DT_ALIAS(lora0));
-    if (!device_is_ready(lora_dev)) {
+    const struct device *lora = DEVICE_DT_GET(LORA_NODE);
+    if (!device_is_ready(lora)) {
         LOG_ERR("LoRa device not ready");
-        return -ENODEV;
+        return;
     }
 
     struct lora_modem_config cfg = {
-        .frequency      = 915000000UL,
+        .frequency      = LORA_FREQ_HZ,
         .bandwidth      = BW_125_KHZ,
         .datarate       = SF_7,
         .coding_rate    = CR_4_5,
         .preamble_len   = 8,
         .tx_power       = 10,
-        .tx             = false,   /* RX mode */
+        .tx             = false,  /* RX gateway */
         .iq_inverted    = false,
         .public_network = true,
     };
 
-    int ret = lora_config(lora_dev, &cfg);
-    if (ret < 0) {
-        LOG_ERR("LoRa config failed: %d", ret);
-        return ret;
-    }
-
-    /* Clear node state */
-    memset(g_nodes, 0, sizeof(g_nodes));
-
-    LOG_INF("LoRa receiver initialized (915MHz, SF7, BW125kHz, Encrypt-then-MAC)");
-    return 0;
-}
-
-void lora_receiver_start(void)
-{
-    if (receiver_running) {
-        LOG_WRN("LoRa receiver already running");
+    if (lora_config(lora, &cfg) < 0) {
+        LOG_ERR("lora_config failed");
         return;
     }
 
-    receiver_running = true;
+    LOG_INF("misogate: RX (Encrypt-then-MAC, multi-node, 2D trilateration)");
 
-    lora_thread_id = k_thread_create(&lora_thread_data, lora_thread_stack,
-                                     K_THREAD_STACK_SIZEOF(lora_thread_stack),
-                                     lora_receiver_thread,
-                                     NULL, NULL, NULL,
-                                     LORA_THREAD_PRIORITY, 0, K_NO_WAIT);
+    uint32_t rx_ok = 0;
 
-    k_thread_name_set(lora_thread_id, "lora_rx");
-    LOG_INF("LoRa receiver thread started");
+    while (1) {
+        uint8_t buf[64];
+        int16_t rssi = 0, snr = 0;
+
+        int len = lora_recv(lora, buf, sizeof(buf),
+                            K_SECONDS(10), &rssi, &snr);
+
+        if (len > 0) {
+            struct sensor_frame f;
+            if (packet_parse_secure_frame_encmac(buf, (size_t)len, &f) == 0) {
+                process_frame(&f, rssi, snr, len, &rx_ok);
+            } else {
+                LOG_WRN("SECURITY DROP len=%d RSSI=%d SNR=%d", len, rssi, snr);
+            }
+        } else {
+            LOG_INF("misogate: waiting...");
+        }
+    }
 }
-
