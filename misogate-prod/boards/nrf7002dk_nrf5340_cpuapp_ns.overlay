@@ -1,3 +1,22 @@
+/*
+ * Copyright (c) 2023 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+ */
+
+/ {
+	/* Configure the partition manager to use the mx25r64 external flash memory. */
+	chosen {
+		nordic,pm-ext-flash = &mx25r64;
+	};
+};
+
+
+&mx25r64 {
+	status = "okay";
+};
+
+
 / {
     aliases {
         lora0 = &rfm95;
@@ -42,15 +61,4 @@
             low-power-enable;
         };
     };
-};
-
-/ {
-	/* Configure the partition manager to use the mx25r64 external flash memory. */
-	chosen {
-		nordic,pm-ext-flash = &mx25r64;
-	};
-};
-
-&mx25r64 {
-	status = "okay";
 };

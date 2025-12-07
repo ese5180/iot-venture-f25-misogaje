@@ -45,4 +45,3 @@ void mqtt_app_input(void);
 int mqtt_publish_json(const char *json_message, size_t len, enum mqtt_qos qos);
 
 #endif /* MQTT_H */
-

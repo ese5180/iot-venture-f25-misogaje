@@ -330,4 +330,3 @@ int mqtt_publish_json(const char *json_message, size_t len, enum mqtt_qos qos)
     LOG_DBG("Publishing %d bytes to %s", len, MISOGATE_PUB);
     return mqtt_publish(&client_ctx, &param);
 }
-

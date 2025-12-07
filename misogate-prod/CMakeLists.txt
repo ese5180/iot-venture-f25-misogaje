@@ -1,18 +1,29 @@
+#
+# Copyright (c) 2020 Nordic Semiconductor
+#
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+#
+
 cmake_minimum_required(VERSION 3.20.0)
 
-# Point CMake at Zephyr
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(misogate_gateway)
+project(nrf_connect_sdk_intermediate)
 
-# Your source files
-target_sources(app PRIVATE
-  src/main.c
-  src/packet.c
-  src/crypto_min.c
-  src/siphash.c
-  src/mqtt/mqtt.c
-)
+# NORDIC SDK APP START
+target_sources(app PRIVATE src/main.c)
+target_sources(app PRIVATE src/json_payload/json_payload.c)
+target_sources(app PRIVATE src/mqtt/mqtt.c)
 
-# Include directories
+# LoRa module with encryption support
+target_sources(app PRIVATE src/lora/lora.c)
+target_sources(app PRIVATE src/lora/packet.c)
+target_sources(app PRIVATE src/lora/crypto_min.c)
+target_sources(app PRIVATE src/lora/siphash.c)
+
 zephyr_include_directories(src)
+zephyr_include_directories(src/json_payload)
 zephyr_include_directories(src/mqtt)
+zephyr_include_directories(src/lora)
+
+# Make folder containing private key global so that it can be located by the MCUboot.
+zephyr_include_directories_ifdef(CONFIG_BOOT_SIGNATURE_KEY_FILE keys)
