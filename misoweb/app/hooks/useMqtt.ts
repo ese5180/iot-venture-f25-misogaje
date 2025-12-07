@@ -17,42 +17,22 @@ interface UseMqttReturn {
   publish: (topic: string, message: string) => void;
 }
 
-interface MqttConfig {
-  url: string;
-  port?: number;
-  username?: string;
-  password?: string;
-  protocol?: 'wss' | 'ws' | 'mqtt' | 'mqtts';
-}
-
-export function useMqtt(config?: MqttConfig, topics: string[] = []): UseMqttReturn {
+export function useMqtt(brokerUrl?: string, topics: string[] = []): UseMqttReturn {
   const [client, setClient] = useState<MqttClient | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<MqttMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!config || !config.url) {
-      setError('No broker configuration provided');
+    if (!brokerUrl) {
+      setError('No broker URL provided');
       return;
     }
 
-    // Build broker URL
-    const protocol = config.protocol || 'wss';
-    const port = config.port || (protocol === 'wss' ? 8884 : protocol === 'ws' ? 8083 : 8883);
-    // HiveMQ Cloud requires /mqtt path for WebSocket connections
-    const brokerUrl = `${protocol}://${config.url}:${port}/mqtt`;
-
-    console.log('Connecting to MQTT broker:', brokerUrl);
-
-    // Create MQTT client with authentication
+    // Create MQTT client
     const mqttClient = mqtt.connect(brokerUrl, {
-      username: config.username,
-      password: config.password,
       reconnectPeriod: 5000,
       connectTimeout: 30000,
-      clean: true,
-      clientId: `mqttjs_${Math.random().toString(16).substr(2, 8)}`,
     });
 
     mqttClient.on('connect', () => {
@@ -114,7 +94,7 @@ export function useMqtt(config?: MqttConfig, topics: string[] = []): UseMqttRetu
         mqttClient.end();
       }
     };
-  }, [config?.url, config?.port, config?.username, config?.password, config?.protocol, topics.join(',')]);
+  }, [brokerUrl, topics.join(',')]);
 
   const publish = useCallback(
     (topic: string, message: string) => {

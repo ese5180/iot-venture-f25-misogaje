@@ -13,6 +13,7 @@
     "@aws-sdk/client-sts": "^3.934.0",
     "@aws-sdk/credential-providers": "^3.934.0",
     "amazon-cognito-identity-js": "^6.3.16",
+    "aws-iot-device-sdk-v2": "^1.23.1",
     "mqtt": "^5.14.1",
     "next": "14.2.3",
     "react": "^18",

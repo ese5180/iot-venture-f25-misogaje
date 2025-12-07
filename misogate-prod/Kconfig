@@ -1,0 +1,42 @@
+#
+# Copyright (c) 2020 Nordic Semiconductor ASA
+#
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+#
+
+menu "Misogate Configuration"
+
+config MISOGATE_APP_VERSION
+	string "Application version"
+	default "0.0.1"
+
+config MISOGATE_MQTT_BROKER_HOSTNAME
+	string "MQTT Broker Hostname"
+	default "c1412829227647ae9f57545fe534a511.s1.eu.hivemq.cloud"
+
+config MISOGATE_MQTT_BROKER_PORT
+	int "MQTT Broker Port"
+	default 8883
+
+config MISOGATE_MQTT_CLIENT_ID
+	string "MQTT Client ID"
+	default "misogate"
+
+config MISOGATE_MQTT_USERNAME
+	string "MQTT Username"
+	default "default"
+
+config MISOGATE_MQTT_PASSWORD
+	string "MQTT Password"
+	default "default"
+
+module = MISOGATE
+module-str = MISOGATE
+source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
+
+endmenu
+
+menu "Zephyr Kernel"
+source "Kconfig.zephyr"
+endmenu
+
