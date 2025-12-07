@@ -125,10 +125,32 @@ uint32_t lora_get_rx_count(void)
     return rx_ok;
 }
 
+/* Track dropped packets for logging */
+static uint32_t mqtt_dropped_count = 0;
+static bool mqtt_was_connected = false;
+
 /* Publish sensor data to MQTT */
 static void publish_sensor_data(const struct sensor_frame *f, int32_t absB, 
                                 int32_t dAbsB, int16_t rssi, int16_t snr, int pos_rel)
 {
+    /* Check MQTT connection status first to avoid unnecessary work */
+    if (!mqtt_is_connected()) {
+        mqtt_dropped_count++;
+        /* Only log periodically to avoid spam */
+        if (mqtt_dropped_count == 1 || (mqtt_dropped_count % 10) == 0) {
+            LOG_WRN("MQTT not connected, dropped %u LoRa packet(s)", mqtt_dropped_count);
+        }
+        mqtt_was_connected = false;
+        return;
+    }
+
+    /* Log recovery if we were previously dropping packets */
+    if (!mqtt_was_connected && mqtt_dropped_count > 0) {
+        LOG_INF("MQTT reconnected, resuming publish (dropped %u packets)", mqtt_dropped_count);
+        mqtt_dropped_count = 0;
+    }
+    mqtt_was_connected = true;
+
     char json_msg[512];
     int len;
 
@@ -194,6 +216,8 @@ static void publish_sensor_data(const struct sensor_frame *f, int32_t absB,
         int err = mqtt_publish_json(json_msg, len, MQTT_QOS_0_AT_MOST_ONCE);
         if (err) {
             LOG_WRN("Failed to publish LoRa data to MQTT: %d", err);
+            /* MQTT may have disconnected between our check and publish */
+            mqtt_was_connected = false;
         } else {
             LOG_DBG("Published LoRa data to MQTT");
         }

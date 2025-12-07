@@ -2,6 +2,7 @@
 #define MQTT_H
 
 #include <zephyr/net/mqtt.h>
+#include <stdbool.h>
 
 /**
  * @brief MQTT topic definitions
@@ -17,11 +18,37 @@
 int mqtt_app_init(void);
 
 /**
- * @brief Connect to the MQTT broker
+ * @brief Connect to the MQTT broker (non-blocking, initiates connection)
  *
  * @return 0 on success, negative errno on failure
  */
 int mqtt_app_connect(void);
+
+/**
+ * @brief Wait for MQTT connection to be fully established
+ *
+ * This function blocks until CONNACK is received or timeout expires.
+ * Must be called after mqtt_app_connect() returns successfully.
+ *
+ * @param timeout_ms Maximum time to wait in milliseconds
+ *
+ * @return 0 if connected, -ETIMEDOUT if timeout, other negative errno on error
+ */
+int mqtt_wait_connected(uint32_t timeout_ms);
+
+/**
+ * @brief Check if MQTT is fully connected (CONNACK received)
+ *
+ * @return true if connected, false otherwise
+ */
+bool mqtt_is_connected(void);
+
+/**
+ * @brief Check if MQTT connection is in progress
+ *
+ * @return true if connecting, false otherwise
+ */
+bool mqtt_is_connecting(void);
 
 /**
  * @brief Disconnect from the MQTT broker

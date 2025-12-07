@@ -291,6 +291,60 @@ void mqtt_app_disconnect(void)
     }
 }
 
+bool mqtt_is_connected(void)
+{
+    return connected;
+}
+
+bool mqtt_is_connecting(void)
+{
+    return connecting;
+}
+
+int mqtt_wait_connected(uint32_t timeout_ms)
+{
+    if (connected)
+    {
+        return 0;
+    }
+
+    if (!connecting)
+    {
+        LOG_ERR("mqtt_wait_connected called but not connecting");
+        return -EINVAL;
+    }
+
+    uint32_t elapsed = 0;
+    const uint32_t poll_interval = 50; /* ms */
+
+    LOG_INF("Waiting for MQTT CONNACK (timeout=%u ms)...", timeout_ms);
+
+    while (elapsed < timeout_ms)
+    {
+        /* Process MQTT events to receive CONNACK */
+        wait(poll_interval);
+        mqtt_input(&client_ctx);
+
+        if (connected)
+        {
+            LOG_INF("MQTT connection established after %u ms", elapsed);
+            return 0;
+        }
+
+        if (!connecting)
+        {
+            /* Connection failed (got error in event handler) */
+            LOG_ERR("MQTT connection failed during wait");
+            return -ECONNREFUSED;
+        }
+
+        elapsed += poll_interval;
+    }
+
+    LOG_ERR("MQTT connection timeout after %u ms", timeout_ms);
+    return -ETIMEDOUT;
+}
+
 void mqtt_app_input(void)
 {
     // Process MQTT events regardless of connection state

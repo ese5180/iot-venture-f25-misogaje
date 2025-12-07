@@ -75,7 +75,17 @@ static void connect_work_fn(struct k_work *work)
         return;
     }
 
-    // Start processing MQTT input
+    /* Wait for MQTT connection to be fully established (CONNACK received) */
+    err = mqtt_wait_connected(10000); /* 10 second timeout */
+    if (err)
+    {
+        LOG_ERR("mqtt_wait_connected failed: %d. Retrying...", err);
+        mqtt_app_disconnect();
+        (void)k_work_reschedule(&connect_work, K_SECONDS(5));
+        return;
+    }
+
+    /* Now MQTT is fully connected - start processing input for keepalive/subscriptions */
     k_work_reschedule(&mqtt_process_work, K_NO_WAIT);
 
     /* Mark image as working to avoid reverting to the former image after a reboot. */
@@ -84,10 +94,10 @@ static void connect_work_fn(struct k_work *work)
     boot_write_img_confirmed();
 #endif
 
-    /* Start LoRa receiver thread now that MQTT is connected */
+    /* Start LoRa receiver thread now that MQTT is FULLY connected */
     if (lora_initialized && !lora_started)
     {
-        LOG_INF("Starting LoRa receiver thread...");
+        LOG_INF("Starting LoRa receiver thread (MQTT confirmed connected)");
         lora_receiver_start();
         lora_started = true;
     }
