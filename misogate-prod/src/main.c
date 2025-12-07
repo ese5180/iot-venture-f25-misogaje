@@ -67,10 +67,10 @@ static void connect_work_fn(struct k_work *work)
 
     LOG_INF("Connecting to MQTT broker...");
 
-    err = mqtt_app_connect();
+    err = mqtt_app_connect_with_retries();
     if (err)
     {
-        LOG_ERR("mqtt_app_connect failed: %d. Retrying...", err);
+        LOG_ERR("mqtt_app_connect_with_retries failed: %d. Retrying...", err);
         (void)k_work_reschedule(&connect_work, K_SECONDS(5));
         return;
     }
@@ -94,12 +94,17 @@ static void connect_work_fn(struct k_work *work)
     boot_write_img_confirmed();
 #endif
 
-    /* Start LoRa receiver thread now that MQTT is FULLY connected */
+    /* Start LoRa receiver and calibration now that MQTT is FULLY connected */
     if (lora_initialized && !lora_started)
     {
         LOG_INF("Starting LoRa receiver thread (MQTT confirmed connected)");
         lora_receiver_start();
         lora_started = true;
+
+        /* Start calibration process - user must enter calibration points
+         * via serial terminal before MQTT data will be published */
+        LOG_INF("Starting calibration mode - see serial console for instructions");
+        lora_start_calibration();
     }
 }
 

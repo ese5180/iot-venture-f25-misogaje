@@ -25,6 +25,13 @@ int mqtt_app_init(void);
 int mqtt_app_connect(void);
 
 /**
+ * @brief Connect to the MQTT broker with retries (up to 3 attempts)
+ *
+ * @return 0 on success, negative errno on failure after all retries
+ */
+int mqtt_app_connect_with_retries(void);
+
+/**
  * @brief Wait for MQTT connection to be fully established
  *
  * This function blocks until CONNACK is received or timeout expires.

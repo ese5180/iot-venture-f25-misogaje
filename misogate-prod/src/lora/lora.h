@@ -49,9 +49,51 @@ int lora_receiver_init(void);
 void lora_receiver_start(void);
 
 /**
- * @brief Get the estimated relative position (0-100)
+ * @brief Position structure with x,y coordinates (0-1000 range)
+ */
+struct lora_position {
+    int x;  /* 0-1000 */
+    int y;  /* 0-1000 */
+    bool valid;
+};
+
+/**
+ * @brief Calibration state
+ */
+typedef enum {
+    CALIB_STATE_IDLE,           /* Not yet started */
+    CALIB_STATE_WAITING_INPUT,  /* Waiting for "X Y" or "START" */
+    CALIB_STATE_RUNNING,        /* Normal operation */
+} calib_state_t;
+
+/**
+ * @brief Start calibration process via serial console
+ * 
+ * Call this after MQTT is connected. User will enter calibration points
+ * via serial in format "X Y" (0-100), then type "START" to begin.
+ */
+void lora_start_calibration(void);
+
+/**
+ * @brief Check if calibration is complete and system is running
+ * 
+ * @return true if system is in running state
+ */
+bool lora_is_running(void);
+
+/**
+ * @brief Get the estimated 2D position
  *
- * @return Position 0-100 (0=node1, 100=node2), or -1 if not available
+ * @param[out] pos Pointer to position struct to fill
+ * @return 0 on success (valid position), -1 if not available
+ */
+int lora_get_position(struct lora_position *pos);
+
+/**
+ * @brief Get the estimated relative position (0-1000)
+ *
+ * @return Position 0-1000 (0=node1, 1000=node2), or -1 if not available
+ * @deprecated Use lora_get_position() instead
  */
 int lora_get_position_rel(void);
 

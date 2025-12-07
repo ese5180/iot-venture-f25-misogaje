@@ -28,6 +28,15 @@ static struct sockaddr_storage broker;
 static bool connected = false;
 static bool connecting = false;
 
+/* Reconnect work */
+static void mqtt_reconnect_work_fn(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(mqtt_reconnect_work, mqtt_reconnect_work_fn);
+
+/* Retry configuration */
+#define MQTT_MAX_RETRIES 3
+#define MQTT_RETRY_DELAY_MS 2000
+static int connection_retries = 0;
+
 /* File descriptor */
 static struct pollfd fds[1];
 
@@ -119,6 +128,9 @@ void mqtt_evt_handler(struct mqtt_client *const client,
         connected = false;
         connecting = false;
         clear_fds();
+        /* Schedule reconnection attempt */
+        connection_retries = 0; /* Reset retries for reconnect */
+        k_work_reschedule(&mqtt_reconnect_work, K_MSEC(MQTT_RETRY_DELAY_MS));
         break;
 
     case MQTT_EVT_PUBLISH:
@@ -263,7 +275,8 @@ int mqtt_app_connect(void)
         return err;
     }
 
-    LOG_INF("Initiating MQTT connection to %s:%d", SERVER_HOST, SERVER_PORT);
+    LOG_INF("Initiating MQTT connection to %s:%d (attempt %d/%d)",
+            SERVER_HOST, SERVER_PORT, connection_retries + 1, MQTT_MAX_RETRIES);
     LOG_INF("Client ID: %s, Username: %s", MQTT_CLIENTID, MQTT_USERNAME);
 
     connecting = true;
@@ -278,6 +291,34 @@ int mqtt_app_connect(void)
     prepare_fds(&client_ctx);
     LOG_INF("MQTT connection initiated, waiting for CONNACK...");
     return 0;
+}
+
+int mqtt_app_connect_with_retries(void)
+{
+    int err;
+
+    connection_retries = 0;
+
+    while (connection_retries < MQTT_MAX_RETRIES)
+    {
+        err = mqtt_app_connect();
+        if (err == 0)
+        {
+            /* Connection initiated successfully */
+            return 0;
+        }
+
+        connection_retries++;
+        if (connection_retries < MQTT_MAX_RETRIES)
+        {
+            LOG_WRN("MQTT connect attempt %d/%d failed, retrying in %d ms...",
+                    connection_retries, MQTT_MAX_RETRIES, MQTT_RETRY_DELAY_MS);
+            k_sleep(K_MSEC(MQTT_RETRY_DELAY_MS));
+        }
+    }
+
+    LOG_ERR("MQTT connection failed after %d attempts", MQTT_MAX_RETRIES);
+    return err;
 }
 
 void mqtt_app_disconnect(void)
@@ -359,6 +400,39 @@ void mqtt_app_input(void)
         {
             mqtt_live(&client_ctx);
         }
+    }
+}
+
+static void mqtt_reconnect_work_fn(struct k_work *work)
+{
+    ARG_UNUSED(work);
+
+    if (connected || connecting)
+    {
+        return; /* Already connected or connecting */
+    }
+
+    LOG_INF("Attempting MQTT reconnection (attempt %d/%d)...",
+            connection_retries + 1, MQTT_MAX_RETRIES);
+
+    int err = mqtt_app_connect();
+    if (err)
+    {
+        connection_retries++;
+        if (connection_retries < MQTT_MAX_RETRIES)
+        {
+            LOG_WRN("Reconnect attempt failed, scheduling retry...");
+            k_work_reschedule(&mqtt_reconnect_work, K_MSEC(MQTT_RETRY_DELAY_MS));
+        }
+        else
+        {
+            LOG_ERR("MQTT reconnection failed after %d attempts", MQTT_MAX_RETRIES);
+        }
+    }
+    else
+    {
+        /* Wait for CONNACK (non-blocking, let mqtt_app_input handle it) */
+        LOG_INF("Reconnection initiated, waiting for CONNACK...");
     }
 }
 
