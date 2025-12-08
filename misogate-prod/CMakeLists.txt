@@ -19,6 +19,8 @@ target_sources(app PRIVATE src/lora/lora.c)
 target_sources(app PRIVATE src/lora/packet.c)
 target_sources(app PRIVATE src/lora/crypto_min.c)
 target_sources(app PRIVATE src/lora/siphash.c)
+target_sources(app PRIVATE src/lora/calibration.c)
+target_sources(app PRIVATE src/lora/position.c)
 
 zephyr_include_directories(src)
 zephyr_include_directories(src/json_payload)
