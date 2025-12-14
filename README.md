@@ -1,197 +1,298 @@
+# MagNav: Wireless Underground Guidance
+
+![](magnav.png)
+
 [![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/9GQ6o4cu)
 
-# IoT Venture Pitch
+> **Affordable precision navigation for microtunneling.**
 
-## ESE5180: IoT Wireless, Security, & Scaling
+---
 
-**Team Name:**
+## Team
 
-| Team Member Name | Email Address             |
-| ---------------- | ------------------------- |
-| jefferson ding   | tyding@seas.upenn.edu     |
-| sophia fu        | sophiafu@seas.upenn.edu   |
-| gabriel zhang    | jgzhang@wharton.upenn.edu |
-| mia wang         | wxm@seas.upenn.edu        |
+| Name | Email |
+|------|-------|
+| Jefferson Ding | tyding@seas.upenn.edu |
+| Sophia Fu | sophiafu@seas.upenn.edu |
+| Gabriel Zhang | jgzhang@wharton.upenn.edu |
+| Mia Wang | wxm@seas.upenn.edu |
 
-**GitHub Repository URL:** https://github.com/ese5180/iot-venture-f25-misogaje
+**Course:** ESE5180: IoT Wireless, Security, & Scaling  
+**Repository:** [GitHub](https://github.com/ese5180/iot-venture-f25-misogaje)
 
-## Concept Development
+---
 
-### Product Function
+## Table of Contents
 
-The system provides continuous micro tunnel boring machine (TBM) navigation underground without relying on noisy internal IMUs or vulnerable electronics inside the machine, which also removes excessive wiring and single points of failure. Surface nodes detect the magnetic field of the TBM-mounted magnet, and the gateway triangulates position and heading using a dipole solver. This data is transmitted via LoRa from nodes to the gateway and then via Wi-Fi MQTT to operators and remote servers.
+- [Overview](#overview)
+- [The Problem](#the-problem)
+- [Our Solution](#our-solution)
+- [System Architecture](#system-architecture)
+- [Target Market](#target-market)
+- [Stakeholder Validation](#stakeholder-validation)
+- [Technical Specifications](#technical-specifications)
+- [Project Reflection](#project-reflection)
+- [Resources](#resources)
 
-### Target Market & Demographics
+---
 
-#### Who will be using the product?
+## Overview
 
-HDD and microtunneling site engineersTBM operators who need continuous bearing of their machine, but lasers are too expensive, and other methods like IMU are not accurate enough and are failure-prone.
+MagNav is a wireless navigation system for micro tunnel boring machines (TBMs) that provides continuous position and heading data without relying on internal IMUs or vulnerable in-machine electronics. By mounting a strong magnet on the TBM and detecting its field from surface nodes, we eliminate excessive wiring, reduce failure points, and deliver affordable guidance to an underserved market segment.
 
-#### Who will be purchasing the product?
+---
 
-Trenchless contractors (HDD, MTBM, pipe jacking), municipal utility owners/EPCs, and rental fleets; college design teams (e.g., Penn Hyperloop) as pilots.
+## The Problem
 
-#### Where will you deploy it?
+Short microtunneling projects (10–50 m) face a significant guidance gap:
 
-North America & EU urban/suburban jobs with ~1–3 m cover (street right-of-way, utility corridors).
+- $100K+ navigation systems are cost-prohibitive for small jobs
+- "Eyeball" alignment results in 10–20 cm exit errors
+- Internal IMUs suffer from drift, vibration, and water ingress
+- No middle-ground solution exists between manual methods and premium systems
 
-First field test: Bastrop, TX.
+This leads to rework, lost labor time, and no digital traceability for contractors and municipalities.
 
-#### How large is the market you’re targeting (USD)?
+---
 
-Beachhead market: Microtunneling (MTBM)
+## Our Solution
 
-Recent reports place the global MTBM/microtunneling machine market roughly in the $1.1–1.5B (2024) range. Using a realistic 1–3% “instrumentation/guidance add-on” instead of a full rig, our TAM ≈ $11–45M per year. Regionally, microtunneling is concentrated in NA + EU ≈ ~60% of spend.
+MagNav uses magnetic field triangulation from the surface:
 
-Expanded opportunity, after MTBM sucess
+1. **TBM-Mounted Magnet** – A strong N52 neodymium magnet attached to the TBM nose generates a detectable field
+2. **Surface Nodes** – Magnetometer-equipped nodes detect the field strength and direction
+3. **Gateway Triangulation** – Three or more readings are fused using a dipole solver + Extended Kalman Filter (EKF) to compute position and heading
+4. **Cloud Uplink** – Data flows via LoRa → Gateway → Wi-Fi MQTT → operators and remote servers
 
-Adding adjacent install categories: HDD $9.90B (2024), Pipe Jacking ≈ $1.2B (2024), Horizontal Auger Boring ≈ $0.33–0.41B (2024–31). Summed with MTBM yields ≈ $12.5–13.0B of trenchless install equipment spend. Applying the same 1–3% attach rate ⇒ extended TAM ≈ $126–379M per year.
+**Key advantages:**
+- No electronics inside the TBM (eliminates water ingress and vibration failures)
+- No cables to route through the tunnel
+- Testable above ground before deployment
+- Target price point: under $5K
 
-#### How much of that market do you expect to capture (USD)?
+---
 
-SAM: Use NA + EU ≈ 60% of the MTBM TAM ⇒ SAM ≈ $6.7–27.0M/yr. For all trenchless construction post pilot trials: $44–156M/yr
+## System Architecture
 
-SOM: target 1–5% of SAM via direct sales + rentals ⇒ ≈ $0.07–1.35M/yr. For all trenchless construction post pilot trials: $0.44–7.8M/yr
+### Communication Flow
 
-#### What competitors are already in the space?
+```
+TBM-Mounted     Surface Nodes      Gateway              Cloud
+  Magnet    →   Magnetometer  →   LoRa Receiver   →   Wi-Fi MQTT
+  (N52)         + Nordic MCU      + Triangulation      + Dashboard
+                + LoRa TX         + EKF Solver
+```
 
-Microtunneling: VMT (TUnIS Navigation MT / TBM Laser) and related tunneling measurement systems. 
+### System Diagram
 
-HDD guidance (adjacent/secondary market): Digital Control Inc. (DigiTrak), Underground Magnetics, Subsite Electronics—dominant in walkover locating; useful benchmark for pricing and features. 
+![System Diagram](image.png)
 
-### Stakeholders
+### Node Architecture
 
-Penn Hyperloop – immediate competition application in Not-A-Boring Competition (NABC) as a field deployment test.
+| Component | Surface Node | Gateway |
+|-----------|--------------|---------|
+| MCU | Nordic nRF7002 DK | Nordic nRF7002 DK |
+| Sensor | MMC5983MA Magnetometer | — |
+| Wireless | LoRa (TX) | LoRa (RX) + Wi-Fi |
+| Housing | IP65 Enclosure | Weather-resistant |
+| Power | Battery | Wall adapter |
 
-Other Trenchless companies, including Robbins, Herrenknecht AG, or Komatsu.
+---
 
-Utilities Contractors and government agencies such as Progressive Pipeline Management, Philadelphia Water, Philadelphia Gas Works, or PennDOT.
+## Target Market
 
-The Boring Company (TBC) & other full size TBM constructors
+### Market Sizing
 
-#### Cole Kenny, GNC engineer at TBC:
+| Segment | Value |
+|---------|-------|
+| **Global MTBM Equipment Market (2024)** | $1.1–1.5B |
+| **Navigation/Guidance Systems** | ~$120–160M/yr |
+| **TAM** | $160M (global nav/guidance) |
+| **SAM** | $65M (NA + EU) |
+| **SOM** | $3.25M (1–5% initial capture) |
 
-##### Call 1:
+*Market growing at >8% CAGR*
 
-Liked that we are trying to avoid electronics inside the TBM and push everything to the surface (eliminating failure points), also a novel method no one did before.
+### Target Customers
 
-Thought the idea is testable without a tunnel, and that doing wireless removes hassle of laying cables etc.
+- **Direct users:** Trenchless contractors (HDD, MTBM, pipe jacking), municipal utility owners
+- **OEM partners:** Engineering, procurement & construction firms, TBM manufacturers
+- **Pilot partners:** Penn Hyperloop (Not-A-Boring Competition)
 
-Points to note:
+### Competitive Landscape
 
-Whether the magnetic field would be strong enough at 5 ft depth, especially with the steel shell.
+| Competitor | Segment | Notes |
+|------------|---------|-------|
+| VMT (TUnIS Navigation) | Microtunneling | Premium pricing, full-featured |
+| Digital Control Inc. (DigiTrak) | HDD | Dominant in walkover locating |
+| Underground Magnetics | HDD | Established player |
+| Subsite Electronics | HDD | Benchmark for pricing |
 
-Urban magnetic clutter (rebar, vehicles, power lines) and whether we can filter that out.
+**Our differentiator:** Affordable system targeting the underserved $0–$100K gap with no in-tunnel electronics.
 
-Surface logistics (laying out and leapfrogging nodes during a dig).
+---
 
-##### Call 2:
+## Stakeholder Validation
 
-Key Positive Feedback
+### Cole Kenny, Head of GNC, The Boring Company
 
--Comms infrastructure substantially complete:He noted that having LoRa node→gateway comms, Nordic Wi-Fi MQTT uplink, encryption, and OTA update flow already functioning puts us in a good spot: most teams in NABC don't even show up with working MQTT.
+We conducted two calls with Cole Kenny to validate our approach and gather feedback.
 
--Strong approval for “no electronics inside TBM” design: He described the magnet-on-nose + surface node approach as “simple, robust, and very TBC-style,” minimizing water ingress and vibration failure points.
+#### What He Liked
 
--High marks for testability: The fact that the system can be fully validated above ground (tripod tests → steel box for attenuation → rail simulation for positioning) is great for lean development and fits well with NABC rules, which requires offline navigation testing without a tunnel.
+> *"Industry technologies are overkill for small projects. We need an under-5k system that is reliable enough."*
 
--Product market potential: Cole remarked that a stable, steel-invariant magnetic system could be useful beyond NABC—including microtunneling contractors and horizontal directional drilling (HDD)—because of its simplicity and no-modification requirement on the TBM.
+- **Surface-only electronics:** Eliminating failure points inside the TBM aligns with TBC engineering philosophy
+- **Novel approach:** No one has commercialized this method before
+- **Testable without a tunnel:** Fits lean development and NABC competition rules
+- **Strong comms infrastructure:** LoRa + MQTT + encryption + OTA updates already functioning
 
-Concerns Identified
+#### Concerns Raised
 
--Magnetic calibration & solver stability: He emphasized that the dipole inversion + EKF solver is the hardest part and warned against heading flips and bias drift if not carefully calibrated.
+- **Magnetic calibration & solver stability:** Dipole inversion + EKF is the hardest part; risk of heading flips and bias drift
+- **Steel distortion:** TBM nose will reshape the magnetic field—needs offset modeling
+- **Environmental noise:** External ferrous objects, generators, and machinery can introduce interference
+- **Operational logistics:** Node placement and leapfrogging during a dig needs clear SOPs
 
--Steel distortion of magnetic field: The TBM nose will significantly reshape the magnetic field; we must account for this with: steel-analog test fixtures, offset modeling, and baseline distortion confirmation.
+#### His Guidance
 
--Environmental noise: External ferrous objects, power generators, and moving machinery can introduce noise. This is not the case for NABC, but it is a risk for real deployments (especially for unmarked metal pipes). He recommended node SNR weighting and robust outlier rejection.
+1. Lock the communication architecture—shift focus to sensing and solving
+2. Prioritize magnetic solver calibration (bias removal, Earth subtraction, weighted fitting)
+3. Test with steel fixtures before a real TBM
+4. Prepare inspector-ready evidence for NABC
 
--Operational logistics:Node placement and leapfrogging during a real dig will require a clear SOP, ensuring sensors remain aligned with the TBM path.
+---
 
-Guidance for Next Steps
+## Technical Specifications
 
--Lock the communication architecture (LoRa nodes → LoRa gateway → Nordic MQTT): No more rewrites. Shift fully to sensing and solving.
+### Security Requirements
 
--Focus engineering effort on the magnetic solver and calibration: Node bias removal, Earth/background subtraction, Heading stability, Weighted dipole fitting, EKF smoothing
+| ID | Requirement |
+|----|-------------|
+| SR-01 | All LoRa packets use AES-CCM encryption with per-packet nonce and monotonic counter |
+| SR-02 | Gateway authenticates to MQTT broker before publishing |
+| SR-03 | Logs are append-only and tamper-evident using hash chaining |
 
--Test with steel before a real TBM: use a low-cost steel pipe or metal cabinet analog to understand field distortion early.
+### Hardware Requirements
 
--Prepare inspector-ready evidence: Air-depth test results, Steel-attenuation test, rail demonstration, Live MQTT feed at 0.1 Hz.
-These satisfy all NABC navigation rules.
+| ID | Requirement |
+|----|-------------|
+| HR-01 | TBM magnet (N52, ≥50×20 mm) generates ≥1 μT at 1.5 m depth |
+| HR-02 | Surface nodes include nRF7002, LoRa shield, MMC5983MA magnetometer, IP65 housing |
+| HR-03 | Gateway is nRF7002 DK with Wi-Fi for MQTT uplink |
+| HR-04 | System supports ≥10 nodes at 0.1 Hz update rate |
 
-Overall Stakeholder Outlook
+### Software Requirements
 
-Cole described the system as feasible, innovative, and competitive, provided that calibration and heading stability receive focused attention. He reinforced that our progress in communications, encryption, and OTA updates significantly de-risks the project and that our architecture is aligned with TBC engineering philosophy.
+| ID | Requirement |
+|----|-------------|
+| SRS-01 | Firmware runs Zephyr RTOS on Nordic MCUs |
+| SRS-02 | Nodes transmit magnetometer readings at 0.1–1 Hz via LoRa |
+| SRS-03 | Gateway fuses ≥3 node readings using dipole solver + EKF |
+| SRS-04 | Telemetry published via MQTT in JSON (chainage, easting, northing, elevation, heading) |
 
-### System-Level Diagrams
+### MQTT Telemetry Format
 
-![alt text](image.png)
+```json
+{
+  "team": "MagNav",
+  "timestamp": 1702598400,
+  "mining": true,
+  "chainage": 12.5,
+  "easting": 100.23,
+  "northing": 50.67,
+  "elevation": -1.2,
+  "roll": 0.01,
+  "pitch": -0.02,
+  "heading": 1.57,
+  "extra": {}
+}
+```
 
-### Security Requirements Specification
+### Secure Firmware Updates
 
-SR-01: All navigation packets over LoRa shall use AES-CCM with a per-packet nonce and monotonic counter.
+We use MCUboot as the bootloader with Zephyr RTOS:
 
-SR-02: Gateway shall authenticate to MQTT broker before publishing.
+- **Bootloader size:** ~43 KB
+- **Application size:** ~877 KB
+- **Update method:** Wi-Fi (via MQTT infrastructure)
+- **Storage:** AWS S3 bucket
+- **Rollback protection:** MCUboot automatic rollback if new firmware fails to confirm via `img_mgmt_state_confirm()`
 
-SR-03: Logs shall be append-only and tamper-evident using hash chaining with synchronized gateway timestamps.
+---
 
-### Hardware Requirements Specification
+## Project Reflection
 
-HR-01: TBM-mounted magnet (N52, ≥50×20 mm) shall generate ≥1 μT signal at 1.5 m depth.
+### What Went Well
 
-HR-02: Surface nodes shall include Nordic nRF7002 with SAMD21Pro RF / Other Lora shield, MMC5983MA magnetometer, LoRa antenna, and IP65 housing.
+**Communications infrastructure exceeded expectations.** We successfully implemented the full LoRa node → gateway → Wi-Fi MQTT pipeline with AES-CCM encryption and OTA update capability. Cole Kenny noted that most NABC teams don't show up with working MQTT. Having this complete early let us focus on the harder sensing problems.
 
-HR-03: Gateway shall be an nRF7002 DK with Wi-Fi capability for MQTT uplink.
+**Stakeholder validation was invaluable.** The two calls with Cole Kenny at The Boring Company gave us real-world feedback that shaped our priorities. His endorsement of the "no electronics inside the TBM" approach confirmed we were solving a real problem in a way that industry practitioners would trust.
 
-HR-04: System shall support ≥10 nodes with 0.1 Hz updates.
+**Zephyr RTOS proved to be the right choice.** Despite the learning curve, Zephyr's driver model and MCUboot integration gave us a solid foundation for both the node firmware and secure updates. The Nordic nRF7002 DK's dual Wi-Fi/BLE capability provided flexibility we leveraged for the gateway.
 
-### Software Requirements Specification
+**Modular architecture paid off.** Separating concerns (nodes handle sensing, gateway handles fusion, cloud handles visualization) made debugging easier and allowed parallel development across the team.
 
-SRS-01: Firmware shall run Zephyr RTOS on Nordic MCUs.
+### What Didn't Go Well
 
-SRS-02: Nodes shall transmit magnetometer readings at 0.1–1 Hz via LoRa.
+**Magnetic solver development was underestimated.** The dipole inversion and EKF tuning proved significantly more complex than anticipated. Issues with heading stability, bias drift, and calibration consumed more time than planned. Cole's warning about this being "the hardest part" was accurate.
 
-SRS-03: Gateway shall fuse ≥3 node readings into TBM position & heading using dipole solver + EKF.
+**Steel distortion testing started too late.** We should have tested with steel fixtures earlier in the development cycle. The magnetic field distortion from ferrous materials is substantial and requires careful modeling. Waiting until later stages compressed our timeline for solver refinement.
 
-SRS-04: Gateway shall publish telemetry via MQTT in JSON format required  (chainage, easting, northing, elevation, heading:
+**Hardware availability caused delays.** Supply chain issues with some components (particularly magnetometer breakout boards) forced workarounds and slowed initial prototyping. Having backup component options identified earlier would have helped.
 
-{ “team”: <string-formatted team name>, “timestamp”: <UNIX timestamp>, “mining”: <boolean mining flag>, “chainage”: <float-formatted chainage in m>, “easting”: <float-formatted easting in m>, “northing”: <float-formatted northing in m>, “elevation”: <float-formatted elevation in m>, “roll”: <float-formatted roll in radians>, “pitch”: <float-formatted pitch in radians>, “heading”: <float-formatted heading in radians>, “extra”: { “optionalSensor”: <data>, “otherOptionalSensor”: <data>, }
+### What We'd Change
 
-### CI Pipeline
+**Start with the solver, not the comms.** While having robust communications is important, the magnetic triangulation algorithm is the core differentiator. We'd allocate more early-stage time to validating the sensing and fusion approach with bench tests before building out the full wireless stack.
 
-Workflow runs on push to main and sophia/ci branches (for testing). Build artifacts and logs can be found in `ci-pipeline-artifacts` folder.
-## Financial Modelling and Power Budget
+**Build steel test fixtures from day one.** A simple steel pipe or box to simulate TBM field distortion should be part of the initial test setup, not an afterthought. This would surface calibration challenges earlier when there's more time to address them.
 
-See link here: https://docs.google.com/spreadsheets/d/1R-X6t2DPyomnM5r9wQLkjpDll6tv00gY6B8JL_NzjFE/edit?gid=1607148272#gid=1607148272
+**Allocate dedicated time for field testing.** Lab conditions don't capture environmental noise (vehicles, rebar, power lines). We'd budget explicit time for outdoor testing in realistic conditions earlier in the project.
 
-## Secure Firmware Updates
+**Consider a simulation-first approach.** Building a MATLAB/Python magnetic field simulator before hardware integration would have let us validate solver algorithms faster and iterate on calibration strategies without waiting for physical test setups.
 
-### (3.5.1) Draw and describe your bootloading process. Answer the following questions:
+### System Design Retrospective
 
-Zephyr uses the MCUboot as the bootloader. The application core is updated first by downloading the new app core into mcuboot_secondary memory which is swapped into mcuboot_primary. The net core is then updated by loading the new net core firmware into mcuboot_secondary which is swapped into the net core through the PCD drivers.
-![](/images/3.5.1appcore.png)
-![](/images/3.5.1netcore.png)
+**Was LoRa the right choice for node-to-gateway communication?**  
+Yes. LoRa's range (sufficient for surface-to-shallow-underground scenarios), low power consumption, and simple point-to-multipoint topology fit our requirements well. BLE would have required more complex mesh networking, and Wi-Fi's power draw would have been prohibitive for battery-powered nodes. The 0.1–1 Hz update rate is well within LoRa's capabilities.
 
-**How large is your bootloader?**
-Using MCUBoot the bootloader is 30-40kb and our build is 43kb
+**Would other sensors work better?**  
+The MMC5983MA magnetometer was appropriate for our application: high sensitivity, low noise, and good temperature stability. However, adding an IMU to surface nodes for vibration rejection and orientation compensation could improve accuracy in noisy environments. For future iterations, we'd also explore gradiometer configurations (multiple magnetometers per node) to better reject uniform background fields.
 
-**How large is your existing application code?**
-Our app code is 877kb.
+**Did our target market want something different?**  
+Based on stakeholder feedback, our core value proposition (affordable, no-in-tunnel-electronics navigation) resonates strongly. However, we learned that operational simplicity matters as much as technical performance. Contractors want minimal setup time and clear SOPs for node placement. A future version should prioritize user experience and field-ruggedness alongside accuracy improvements.
 
-**Does the bootloader or application code handle the firmware image download?**
-The application code downloads the firmware image.
+**What would we change in the hardware design?**  
+- Integrated LoRa + magnetometer boards to reduce node assembly complexity
+- More robust weatherproofing (IP67+) for real deployment conditions
+- Visual indicators (LEDs) on nodes for field setup confirmation
+- Consider solar charging for extended autonomous operation
 
-**What wireless communication is used to download the images to your device?**
-WiFi
+---
 
-**If you have multiple wireless communications at your disposal, why did you choose this method?**
-Since we’re using MQTT via WiFi we chose WiFi. BLE wasn't needed as that would require an additional device to perform the firmware update.
+## Resources
 
-**Where are the downloaded firmware images stored?**
-AWS S3 Storage Bucket
+### Documentation
 
+- [Financial Model & Power Budget](https://docs.google.com/spreadsheets/d/1R-X6t2DPyomnM5r9wQLkjpDll6tv00gY6B8JL_NzjFE/edit?gid=1607148272#gid=1607148272)
+- [CI Pipeline Artifacts](./ci-pipeline-artifacts)
 
-**What features have you enabled to handle firmware update failures?**
-We enabled MCUboot's automatic rollback mechanism which requires new firmware to explicitly confirm itself by calling `img_mgmt_state_confirm()` after a successful boot. If the new firmware crashes or fails to confirm before the next reboot, MCUboot automatically reverts to the previous working firmware version, preventing the device from being bricked by faulty updates.
+### References
 
+- [Global Micro Tunnel Boring Machine Market Report](https://reports.valuates.com/market-reports/QYRE-Auto-8Z14752/global-micro-tunnel-boring-machine)
+- [Nordic nRF7002 DK Documentation](https://www.nordicsemi.com/Products/Development-hardware/nRF7002-DK)
+- [Zephyr RTOS](https://zephyrproject.org/)
+- [MCUboot](https://www.mcuboot.com/)
 
+---
 
+## License
+
+ESE5180 IoT Venture Project, University of Pennsylvania, Fall 2025
+
+---
+
+<p align="center">
+  <strong>Penn Engineering</strong><br>
+  School of Engineering and Applied Science
+</p>
