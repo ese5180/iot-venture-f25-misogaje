@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../contexts/AuthContext";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { signIn, user } = useAuth();
@@ -137,7 +137,7 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link
               href="/signup"
               className="text-blue-600 dark:text-blue-400 hover:underline font-semibold"
@@ -148,5 +148,24 @@ export default function LoginPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
+        <div className="max-w-md w-full">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
+            <div className="animate-pulse">
+              <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-4"></div>
+              <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-full mb-8"></div>
+            </div>
+          </div>
+        </div>
+      </main>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }
