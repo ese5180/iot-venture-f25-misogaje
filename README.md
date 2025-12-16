@@ -171,7 +171,7 @@ We conducted two calls with Cole Kenny to validate our approach and gather feedb
 
 | ID | Requirement |
 |----|-------------|
-| SR-01 | All LoRa packets use AES-CCM encryption with per-packet nonce and monotonic counter |
+| SR-01 | All LoRa packets use encryption with per-packet nonce and monotonic counter |
 | SR-02 | Gateway authenticates to MQTT broker before publishing |
 | SR-03 | Logs are append-only and tamper-evident using hash chaining |
 
