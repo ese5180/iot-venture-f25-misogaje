@@ -1,6 +1,6 @@
 # MagNav: Wireless Underground Guidance
 
-![](coursewebsiteimage.png)
+![alt text](website400.png)
 
 
 Website: sophfu.github.io
