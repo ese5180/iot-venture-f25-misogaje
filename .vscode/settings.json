@@ -4,6 +4,7 @@
   "nrf-connect.applications": [
     "${workspaceFolder}\\misonode",
     "${workspaceFolder}\\sentx",
-    "${workspaceFolder}/sentx"
+    "${workspaceFolder}/sentx",
+    "${workspaceFolder}/misogate"
   ]
 }
