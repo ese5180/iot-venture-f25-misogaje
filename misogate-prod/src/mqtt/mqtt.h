@@ -1,8 +1,8 @@
 #ifndef MQTT_H
 #define MQTT_H
 
-#include <zephyr/net/mqtt.h>
 #include <stdbool.h>
+#include <zephyr/net/mqtt.h>
 
 /**
  * @brief MQTT topic definitions

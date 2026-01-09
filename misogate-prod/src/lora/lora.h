@@ -1,9 +1,9 @@
 #ifndef LORA_H
 #define LORA_H
 
-#include <stdint.h>
-#include <stdbool.h>
 #include "packet.h"
+#include <stdbool.h>
+#include <stdint.h>
 
 /**
  * @brief Maximum number of sensor nodes supported
@@ -23,21 +23,19 @@
 /**
  * @brief 3D vector type for magnetic field components (in milli-microTesla)
  */
-struct vec3_i32
-{
-    int32_t x;
-    int32_t y;
-    int32_t z;
+struct vec3_i32 {
+  int32_t x;
+  int32_t y;
+  int32_t z;
 };
 
 /**
  * @brief 3D vector type for floating point calculations
  */
-struct vec3_f
-{
-    float x;
-    float y;
-    float z;
+struct vec3_f {
+  float x;
+  float y;
+  float z;
 };
 
 /**
@@ -45,25 +43,25 @@ struct vec3_f
  *
  * Now stores full 3D magnetic field vectors for proper dipole modeling.
  */
-struct node_state
-{
-    /* Baseline tracking */
-    bool have_baseline;
-    uint32_t baseline_count;
+struct node_state {
+  /* Baseline tracking */
+  bool have_baseline;
+  uint32_t baseline_count;
 
-    /* Baseline 3D field (average with no magnet present) */
-    int64_t baseline_sum_x;
-    int64_t baseline_sum_y;
-    int64_t baseline_sum_z;
-    struct vec3_i32 baseline_B; /* Learned baseline B vector in m-uT */
-    int32_t baseline_absB;      /* Learned baseline |B| in m-uT (scalar) */
+  /* Baseline 3D field (average with no magnet present) */
+  int64_t baseline_sum_x;
+  int64_t baseline_sum_y;
+  int64_t baseline_sum_z;
+  struct vec3_i32 baseline_B; /* Learned baseline B vector in m-uT */
+  int32_t baseline_absB;      /* Learned baseline |B| in m-uT (scalar) */
 
-    /* Latest measurements */
-    struct vec3_i32 last_B;     /* Last raw B vector in m-uT */
-    struct vec3_i32 last_B_mag; /* Last magnet-only B (measured - baseline) */
-    int32_t last_absB;          /* Last |B| in m-uT */
-    int32_t last_dAbsB;         /* Last anomaly |B|-baseline in m-uT (for compatibility) */
-    uint32_t last_seq;
+  /* Latest measurements */
+  struct vec3_i32 last_B;     /* Last raw B vector in m-uT */
+  struct vec3_i32 last_B_mag; /* Last magnet-only B (measured - baseline) */
+  int32_t last_absB;          /* Last |B| in m-uT */
+  int32_t
+      last_dAbsB; /* Last anomaly |B|-baseline in m-uT (for compatibility) */
+  uint32_t last_seq;
 };
 
 /**
@@ -83,22 +81,20 @@ void lora_receiver_start(void);
 /**
  * @brief Position structure with x,y coordinates (0-1000 range)
  */
-struct lora_position
-{
-    int x; /* 0-1000 */
-    int y; /* 0-1000 */
-    bool valid;
+struct lora_position {
+  int x; /* 0-1000 */
+  int y; /* 0-1000 */
+  bool valid;
 };
 
 /**
  * @brief Calibration state
  */
-typedef enum
-{
-    CALIB_STATE_IDLE,          /* Not yet started */
-    CALIB_STATE_BASELINE,      /* Capturing baseline (no magnet present) */
-    CALIB_STATE_WAITING_INPUT, /* Waiting for calibration points or START */
-    CALIB_STATE_RUNNING,       /* Normal operation */
+typedef enum {
+  CALIB_STATE_IDLE,          /* Not yet started */
+  CALIB_STATE_BASELINE,      /* Capturing baseline (no magnet present) */
+  CALIB_STATE_WAITING_INPUT, /* Waiting for calibration points or START */
+  CALIB_STATE_RUNNING,       /* Normal operation */
 } calib_state_t;
 
 /**

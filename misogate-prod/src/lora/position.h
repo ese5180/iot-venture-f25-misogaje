@@ -1,19 +1,21 @@
 #ifndef POSITION_H
 #define POSITION_H
 
-#include <stdint.h>
-#include <stdbool.h>
-#include "lora.h"
 #include "calibration.h"
+#include "lora.h"
+#include <stdbool.h>
+#include <stdint.h>
 
 /* ------------ Configuration ------------ */
 
 /**
- * @brief Height of the magnet plane above the sensor plane (in mm or arbitrary units)
+ * @brief Height of the magnet plane above the sensor plane (in mm or arbitrary
+ * units)
  *
- * The sensors are assumed to be in the z=0 plane, and the magnet moves in z=Z0 plane.
- * Set this based on your physical setup. Units should match sensor position units.
- * Example: If sensor positions are in mm and magnet is 50mm above sensors, Z0 = 50.0f
+ * The sensors are assumed to be in the z=0 plane, and the magnet moves in z=Z0
+ * plane. Set this based on your physical setup. Units should match sensor
+ * position units. Example: If sensor positions are in mm and magnet is 50mm
+ * above sensors, Z0 = 50.0f
  */
 #define MAGNET_PLANE_HEIGHT_Z0 20.0f
 
@@ -29,20 +31,18 @@
 /**
  * @brief Physical sensor position in 3D space
  */
-struct sensor_pos
-{
-    float x;
-    float y;
-    float z;
+struct sensor_pos {
+  float x;
+  float y;
+  float z;
 };
 
 /**
  * @brief Node position structure (legacy, kept for compatibility)
  */
-struct node_pos
-{
-    float x;
-    float y;
+struct node_pos {
+  float x;
+  float y;
 };
 
 /**
@@ -53,25 +53,23 @@ struct node_pos
  * - Magnet pointing up (z+): m_hat = (0, 0, 1)
  * - Magnet pointing down (z-): m_hat = (0, 0, -1)
  */
-struct dipole_orientation
-{
-    float mx;
-    float my;
-    float mz;
+struct dipole_orientation {
+  float mx;
+  float my;
+  float mz;
 };
 
 /**
  * @brief Estimation result from the position solver
  */
-struct position_estimate
-{
-    float x;        /* Estimated X position (0-1000) */
-    float y;        /* Estimated Y position (0-1000) */
-    float M;        /* Estimated dipole moment scale factor */
-    float error;    /* Final residual error (sum of squared differences) */
-    int iterations; /* Number of iterations used */
-    bool converged; /* Whether the solver converged */
-    bool valid;     /* Whether this estimate contains valid data */
+struct position_estimate {
+  float x;        /* Estimated X position (0-1000) */
+  float y;        /* Estimated Y position (0-1000) */
+  float M;        /* Estimated dipole moment scale factor */
+  float error;    /* Final residual error (sum of squared differences) */
+  int iterations; /* Number of iterations used */
+  bool converged; /* Whether the solver converged */
+  bool valid;     /* Whether this estimate contains valid data */
 };
 
 /* ------------ Public API ------------ */
@@ -107,14 +105,15 @@ void position_set_dipole_orientation(float mx, float my, float mz);
  * @param z_uT_milli Z component in milli-microTesla
  * @return Magnitude |B| in milli-microTesla
  */
-int32_t position_compute_absB(int32_t x_uT_milli, int32_t y_uT_milli, int32_t z_uT_milli);
+int32_t position_compute_absB(int32_t x_uT_milli, int32_t y_uT_milli,
+                              int32_t z_uT_milli);
 
 /**
  * @brief Estimate 2D position using dipole field model and Gauss-Newton solver
  *
  * This is the physics-based approach: Given the measured magnet-induced fields
- * at each sensor (B_measured - B_baseline), solve for the magnet position (x, y)
- * and dipole moment scale M using nonlinear least squares.
+ * at each sensor (B_measured - B_baseline), solve for the magnet position (x,
+ * y) and dipole moment scale M using nonlinear least squares.
  *
  * @param nodes Array of node states with current 3D field measurements
  * @param initial_guess Optional initial guess (NULL for center of region)
@@ -140,9 +139,7 @@ bool position_estimate_dipole(const struct node_state *nodes,
  */
 bool position_estimate_lookup(const struct node_state *nodes,
                               const struct calib_point *calib_points,
-                              int calib_count,
-                              float *out_x,
-                              float *out_y);
+                              int calib_count, float *out_x, float *out_y);
 
 /**
  * @brief Simple triangulation using weighted averaging of sensor positions
@@ -156,14 +153,14 @@ bool position_estimate_lookup(const struct node_state *nodes,
  * 2. Weight each sensor position by its field strength
  * 3. Compute weighted average to estimate magnet position
  *
- * @param nodes Array of node states with baseline-subtracted 3D field measurements
+ * @param nodes Array of node states with baseline-subtracted 3D field
+ * measurements
  * @param out_x Output X position (0-1000)
  * @param out_y Output Y position (0-1000)
  * @return true if position was estimated, false if not enough data
  */
 bool position_estimate_triangulation(const struct node_state *nodes,
-                                     float *out_x,
-                                     float *out_y);
+                                     float *out_x, float *out_y);
 
 /**
  * @brief Main position estimation function
@@ -182,9 +179,7 @@ bool position_estimate_triangulation(const struct node_state *nodes,
  */
 bool position_estimate_2D(const struct node_state *nodes,
                           const struct calib_point *calib_points,
-                          int calib_count,
-                          float *out_x,
-                          float *out_y);
+                          int calib_count, float *out_x, float *out_y);
 
 /**
  * @brief Get the physical position of a sensor node

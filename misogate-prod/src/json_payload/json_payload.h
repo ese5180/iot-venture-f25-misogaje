@@ -8,13 +8,13 @@
 
 /* Structure used to populate and describe the JSON payload sent to AWS IoT. */
 struct payload {
-	struct {
-		struct {
-			const char *app_version;
-			const char *modem_version;
-			uint32_t uptime;
-		} reported;
-	} state;
+  struct {
+    struct {
+      const char *app_version;
+      const char *modem_version;
+      uint32_t uptime;
+    } reported;
+  } state;
 };
 
 /* @brief Construct a JSON message string.
