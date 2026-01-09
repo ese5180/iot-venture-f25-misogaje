@@ -1,0 +1,8 @@
+west:
+  command: /opt/nordic/ncs/toolchains/ef4fc6722e/bin/west build --build-dir /Users/sophiafu/Documents/ESE5180/iot-venture-f25-misogaje/misogate/build_1
+    /Users/sophiafu/Documents/ESE5180/iot-venture-f25-misogaje/misogate --pristine
+    --board nrf7002dk/nrf5340/cpuapp -- -DNCS_TOOLCHAIN_VERSION=NONE -DCONF_FILE=prj.conf
+    -DEXTRA_CONF_FILE=overlay-memfault.conf;overlay-zperf.conf;sysbuild/mcuboot.conf;boards/nrf7002dk_nrf5340_cpuapp_ns.conf
+    -DDTC_OVERLAY_FILE=boards/nrf7002dk_nrf5340_cpuapp_ns.overlay -DEXTRA_DTC_OVERLAY_FILE=sysbuild/mcuboot.overlay
+  topdir: /Users/sophiafu/Documents/ESE5180
+  version: 1.2.0

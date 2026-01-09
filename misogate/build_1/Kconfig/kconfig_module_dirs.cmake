@@ -1,0 +1,7 @@
+set(kconfig_env_dirs)
+list(APPEND kconfig_env_dirs ZEPHYR_MEMFAULT_FIRMWARE_SDK_MODULE_DIR=/Users/sophiafu/Documents/ESE5180/modules/lib/memfault-firmware-sdk)
+list(APPEND kconfig_env_dirs ZEPHYR_CMSIS_MODULE_DIR=/Users/sophiafu/Documents/ESE5180/modules/hal/cmsis)
+list(APPEND kconfig_env_dirs ZEPHYR_HAL_NORDIC_MODULE_DIR=/Users/sophiafu/Documents/ESE5180/modules/hal/nordic)
+list(APPEND kconfig_env_dirs ZEPHYR_MBEDTLS_MODULE_DIR=/Users/sophiafu/Documents/ESE5180/modules/crypto/mbedtls)
+list(APPEND kconfig_env_dirs ZEPHYR_MCUBOOT_MODULE_DIR=/Users/sophiafu/Documents/ESE5180/bootloader/mcuboot)
+list(APPEND kconfig_env_dirs ZEPHYR_PICOLIBC_MODULE_DIR=/Users/sophiafu/Documents/ESE5180/modules/lib/picolibc)

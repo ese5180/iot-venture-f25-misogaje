@@ -1,0 +1,36 @@
+menu "memfault-firmware-sdk (/Users/sophiafu/Documents/ESE5180/modules/lib/memfault-firmware-sdk)"
+osource "/Users/sophiafu/Documents/ESE5180/modules/lib/memfault-firmware-sdk/ports/zephyr/Kconfig"
+config ZEPHYR_MEMFAULT_FIRMWARE_SDK_MODULE
+	bool
+	default y
+endmenu
+menu "cmsis (/Users/sophiafu/Documents/ESE5180/modules/hal/cmsis)"
+osource "$(ZEPHYR_CMSIS_KCONFIG)"
+config ZEPHYR_CMSIS_MODULE
+	bool
+	default y
+endmenu
+menu "hal_nordic (/Users/sophiafu/Documents/ESE5180/modules/hal/nordic)"
+osource "$(ZEPHYR_HAL_NORDIC_KCONFIG)"
+config ZEPHYR_HAL_NORDIC_MODULE
+	bool
+	default y
+
+config ZEPHYR_HAL_NORDIC_MODULE_BLOBS
+	bool
+endmenu
+menu "mbedtls (/Users/sophiafu/Documents/ESE5180/modules/crypto/mbedtls)"
+osource "$(ZEPHYR_MBEDTLS_KCONFIG)"
+config ZEPHYR_MBEDTLS_MODULE
+	bool
+	default y
+endmenu
+config ZEPHYR_MCUBOOT_MODULE
+	bool
+	default y
+menu "picolibc (/Users/sophiafu/Documents/ESE5180/modules/lib/picolibc)"
+osource "/Users/sophiafu/Documents/ESE5180/modules/lib/picolibc/zephyr/Kconfig"
+config ZEPHYR_PICOLIBC_MODULE
+	bool
+	default y
+endmenu

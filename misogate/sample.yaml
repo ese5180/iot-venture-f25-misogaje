@@ -6,7 +6,7 @@ common:
     sysbuild: true
     build_only: true
     integration_platforms: 
-      - nrf7002dk/nrf5340/cpuapp/ns
+      - nrf7002dk/nrf5340/cpuapp
     platform_exclude:
       - native_sim
     

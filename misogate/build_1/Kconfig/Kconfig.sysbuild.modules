@@ -1,0 +1,18 @@
+config ZEPHYR_MEMFAULT_FIRMWARE_SDK_MODULE
+   bool
+   default y
+config ZEPHYR_CMSIS_MODULE
+   bool
+   default y
+config ZEPHYR_HAL_NORDIC_MODULE
+   bool
+   default y
+config ZEPHYR_MBEDTLS_MODULE
+   bool
+   default y
+config ZEPHYR_MCUBOOT_MODULE
+   bool
+   default y
+config ZEPHYR_PICOLIBC_MODULE
+   bool
+   default y

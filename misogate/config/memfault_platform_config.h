@@ -15,7 +15,8 @@ extern "C" {
 /*
  * Device identification is handled by Kconfig:
  * - CONFIG_MEMFAULT_NCS_DEVICE_ID_RUNTIME uses HW ID
- * - CONFIG_MEMFAULT_NCS_FW_TYPE and CONFIG_MEMFAULT_NCS_FW_VERSION set firmware info
+ * - CONFIG_MEMFAULT_NCS_FW_TYPE and CONFIG_MEMFAULT_NCS_FW_VERSION set firmware
+ * info
  */
 
 /* Enable GNU Build ID for better symbol file matching */

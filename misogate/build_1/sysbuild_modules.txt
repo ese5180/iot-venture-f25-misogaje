@@ -1,0 +1,1 @@
+"mcuboot":"/Users/sophiafu/Documents/ESE5180/bootloader/mcuboot":"/Users/sophiafu/Documents/ESE5180/bootloader/mcuboot/boot/zephyr/sysbuild"

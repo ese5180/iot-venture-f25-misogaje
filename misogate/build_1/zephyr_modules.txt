@@ -1,0 +1,6 @@
+"memfault-firmware-sdk":"/Users/sophiafu/Documents/ESE5180/modules/lib/memfault-firmware-sdk":"/Users/sophiafu/Documents/ESE5180/modules/lib/memfault-firmware-sdk/ports/zephyr"
+"cmsis":"/Users/sophiafu/Documents/ESE5180/modules/hal/cmsis":"${ZEPHYR_CMSIS_CMAKE_DIR}"
+"hal_nordic":"/Users/sophiafu/Documents/ESE5180/modules/hal/nordic":"${ZEPHYR_HAL_NORDIC_CMAKE_DIR}"
+"mbedtls":"/Users/sophiafu/Documents/ESE5180/modules/crypto/mbedtls":"${ZEPHYR_MBEDTLS_CMAKE_DIR}"
+"mcuboot":"/Users/sophiafu/Documents/ESE5180/bootloader/mcuboot":"/Users/sophiafu/Documents/ESE5180/bootloader/mcuboot/boot/bootutil/zephyr"
+"picolibc":"/Users/sophiafu/Documents/ESE5180/modules/lib/picolibc":"/Users/sophiafu/Documents/ESE5180/modules/lib/picolibc"
