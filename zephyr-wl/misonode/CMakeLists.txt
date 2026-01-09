@@ -6,7 +6,9 @@ project(my_app)
 
 # Your source files
 target_sources(app PRIVATE
-    src/main.c
-    src/packet.c
-    src/mag.c
+  src/main.c
+  src/mag.c
+  src/packet.c
+  src/crypto_min.c
+  src/siphash.c
 )

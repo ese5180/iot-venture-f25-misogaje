@@ -1,0 +1,64 @@
+/*
+ * Copyright (c) 2023 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+ */
+
+/ {
+	/* Configure the partition manager to use the mx25r64 external flash memory. */
+	chosen {
+		nordic,pm-ext-flash = &mx25r64;
+	};
+};
+
+
+&mx25r64 {
+	status = "okay";
+};
+
+
+/ {
+    aliases {
+        lora0 = &rfm95;
+    };
+};
+
+/* ===== SPI3 for RFM95 LoRa ===== */
+&spi3 {
+    compatible = "nordic,nrf-spim";
+    status = "okay";
+    pinctrl-0 = <&spi3_default>;
+    pinctrl-1 = <&spi3_sleep>;
+    pinctrl-names = "default", "sleep";
+    cs-gpios = <&gpio1 12 GPIO_ACTIVE_LOW>;
+
+    rfm95: sx1276@0 {
+        compatible = "semtech,sx1276";
+        reg = <0>;
+        label = "RFM95W";
+        spi-max-frequency = <8000000>;
+
+        reset-gpios = <&gpio1 9 GPIO_ACTIVE_LOW>;
+        dio-gpios   = <&gpio1 8 GPIO_ACTIVE_HIGH>;
+        power-amplifier-output = "pa-boost";
+    };
+};
+
+&pinctrl {
+    spi3_default: spi3_default {
+        group1 {
+            psels = <NRF_PSEL(SPIM_SCK,  1, 13)>,
+                    <NRF_PSEL(SPIM_MOSI, 1, 14)>,
+                    <NRF_PSEL(SPIM_MISO, 1, 15)>;
+        };
+    };
+
+    spi3_sleep: spi3_sleep {
+        group1 {
+            psels = <NRF_PSEL(SPIM_SCK,  1, 13)>,
+                    <NRF_PSEL(SPIM_MOSI, 1, 14)>,
+                    <NRF_PSEL(SPIM_MISO, 1, 15)>;
+            low-power-enable;
+        };
+    };
+};

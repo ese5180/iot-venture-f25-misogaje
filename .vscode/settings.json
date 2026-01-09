@@ -2,7 +2,8 @@
   "C_Cpp.default.compileCommands": "${workspaceFolder}/misogate/build/misogate/compile_commands.json",
   "C_Cpp.errorSquiggles": "enabled",
   "nrf-connect.applications": [
-    "${workspaceFolder}/misogate",
-    "${workspaceFolder}\\misonode"
+    "${workspaceFolder}\\misonode",
+    "${workspaceFolder}\\sentx",
+    "${workspaceFolder}/sentx"
   ]
 }
