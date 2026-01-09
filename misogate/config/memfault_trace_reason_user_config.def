@@ -1,0 +1,29 @@
+/*
+ * Memfault Custom Trace Reasons Configuration
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Custom trace events for MagNav/Misogate error tracking
+ * These allow you to capture application-specific errors
+ */
+
+/*
+ * MEMFAULT_TRACE_REASON_DEFINE(reason_name)
+ *
+ * Use these to capture important error events that should be
+ * tracked but don't necessarily cause a crash.
+ */
+
+/* Magnetometer sensor initialization failed */
+MEMFAULT_TRACE_REASON_DEFINE(mag_init_failed)
+
+/* Magnetometer I2C communication error */
+MEMFAULT_TRACE_REASON_DEFINE(mag_i2c_error)
+
+/* WiFi connection lost */
+MEMFAULT_TRACE_REASON_DEFINE(wifi_disconnected)
+
+/* MQTT connection lost */
+MEMFAULT_TRACE_REASON_DEFINE(mqtt_disconnected)
+
+/* AWS IoT publish failed */
+MEMFAULT_TRACE_REASON_DEFINE(aws_publish_failed)

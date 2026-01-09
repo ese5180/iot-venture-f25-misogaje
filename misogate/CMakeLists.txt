@@ -20,7 +20,7 @@ zephyr_include_directories(src)
 zephyr_include_directories(src/json_payload)
 zephyr_include_directories(src/mqtt)
 zephyr_include_directories(src/memfault)
-zephyr_inc;ude_directories(config)
+zephyr_include_directories(config)
 
 # Make folder containing certificates global so that it can be located by the MQTT helper library.
 zephyr_include_directories_ifdef(CONFIG_MQTT_HELPER_PROVISION_CERTIFICATES certs)

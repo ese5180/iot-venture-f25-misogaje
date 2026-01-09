@@ -1,0 +1,55 @@
+/*
+ * Memfault Custom Metrics Heartbeat Configuration
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Custom metrics for MagNav/Misogate magnetometer data
+ * These metrics are forwarded to Memfault cloud for fleet monitoring
+ */
+
+/*
+ * MEMFAULT_METRICS_KEY_DEFINE(key_name, value_type)
+ *
+ * value_type can be:
+ *   kMemfaultMetricType_Unsigned - unsigned integer (use for counts, positive values)
+ *   kMemfaultMetricType_Signed   - signed integer (use for values that can be negative)
+ *   kMemfaultMetricType_Timer    - timer in milliseconds
+ *   kMemfaultMetricType_String   - string value (limited support)
+ */
+
+/* =============================================================================
+ * Magnetometer Metrics - Critical device telemetry
+ * =============================================================================
+ * These metrics track the magnetometer readings for navigation guidance.
+ * Values are scaled: multiply raw value by 0.0001 to get Gauss
+ */
+
+/* Magnetic field X-axis in 0.0001 Gauss units (signed) */
+MEMFAULT_METRICS_KEY_DEFINE(mag_x_gauss_x10000, kMemfaultMetricType_Signed)
+
+/* Magnetic field Y-axis in 0.0001 Gauss units (signed) */
+MEMFAULT_METRICS_KEY_DEFINE(mag_y_gauss_x10000, kMemfaultMetricType_Signed)
+
+/* Magnetic field Z-axis in 0.0001 Gauss units (signed) */
+MEMFAULT_METRICS_KEY_DEFINE(mag_z_gauss_x10000, kMemfaultMetricType_Signed)
+
+/* Magnetic field magnitude in 0.0001 Gauss units */
+MEMFAULT_METRICS_KEY_DEFINE(mag_magnitude_x10000, kMemfaultMetricType_Unsigned)
+
+/* =============================================================================
+ * Device Health Metrics
+ * ============================================================================= */
+
+/* Number of successful magnetometer readings since last heartbeat */
+MEMFAULT_METRICS_KEY_DEFINE(mag_read_success_count, kMemfaultMetricType_Unsigned)
+
+/* Number of failed magnetometer readings since last heartbeat */
+MEMFAULT_METRICS_KEY_DEFINE(mag_read_error_count, kMemfaultMetricType_Unsigned)
+
+/* WiFi connection state (1=connected, 0=disconnected) */
+MEMFAULT_METRICS_KEY_DEFINE(wifi_connected, kMemfaultMetricType_Unsigned)
+
+/* MQTT connection state (1=connected, 0=disconnected) */
+MEMFAULT_METRICS_KEY_DEFINE(mqtt_connected, kMemfaultMetricType_Unsigned)
+
+/* Device uptime in seconds */
+MEMFAULT_METRICS_KEY_DEFINE(uptime_seconds, kMemfaultMetricType_Unsigned)
