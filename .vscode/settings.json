@@ -5,6 +5,7 @@
     "${workspaceFolder}\\misonode",
     "${workspaceFolder}\\sentx",
     "${workspaceFolder}/sentx",
+    "${workspaceFolder}/misonode",
     "${workspaceFolder}/misogate"
   ]
 }
