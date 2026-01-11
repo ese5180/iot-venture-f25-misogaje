@@ -13,7 +13,7 @@ project(nrf_connect_sdk_intermediate)
 target_sources(app PRIVATE src/main.c)
 target_sources(app PRIVATE src/json_payload/json_payload.c)
 target_sources(app PRIVATE src/mqtt/mqtt.c)
-target_sources(app PRIVATE src/memfault/memfault_integration.c)
+# target_sources(app PRIVATE src/memfault/memfault_integration.c)
 # NORDIC SDK APP END
 
 zephyr_include_directories(src)
